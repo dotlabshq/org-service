@@ -1,0 +1,7 @@
+[app]
+name  = "org-service"
+image = "ghcr.io/dotlabshq/org-service:0.1.0"
+
+[[databases]]
+binding = "DB"
+name    = "clave-db"

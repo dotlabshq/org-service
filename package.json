@@ -1,6 +1,6 @@
 {
   "name": "@dotlabshq/org-service",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -14,17 +14,17 @@
     "ioredis": "5.10.1"
   },
   "devDependencies": {
-    "@baseworks/auth": "^0.2.2",
+    "@baseworks/auth": "^0.2.3",
     "@baseworks/core": "^0.2.1",
     "@baseworks/organization": "^0.2.1",
-    "@dotlabshq/flect-sdk": "^0.1.4",
+    "@dotlabshq/flect-sdk": "^0.1.5",
     "@hono/node-server": "^1.19.14",
     "@hono/zod-validator": "^0.4.3",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "0.43.1",
     "hono": "^4.12.27",
     "tsup": "^8.5.1",
-    "tsx": "^4.22.4",
+    "tsx": "^4.22.5",
     "typescript": "^5.9.3",
     "zod": "^3.25.76"
   }

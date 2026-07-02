@@ -1,6 +1,7 @@
 image := "ghcr.io/dotlabshq/org-service"
 
 build:
+    pnpm update
     pnpm build
 
 patch: build
@@ -12,3 +13,6 @@ build-docker tag="latest":
 push-docker tag="latest":
     docker push {{image}}:{{tag}}
 
+release-docker tag:
+    just build-docker {{tag}}
+    just push-docker {{tag}}

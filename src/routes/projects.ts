@@ -93,7 +93,7 @@ export function projectsRouter(db: DB) {
   })
 
   // Environments
-  app.get('/:orgRef/workspaces/:wsRef/projects/:projRef/environments', async (c) => {
+  app.get('/:orgRef/workspaces/:wsRef/projects/:projRef/envs', async (c) => {
     const auth = c.get('auth')
     const ctx  = await resolveWorkspace(c.req.param('orgRef'), c.req.param('wsRef'), auth.userId)
     if (!ctx) return c.json({ error: 'Not found' }, 404)
@@ -104,10 +104,10 @@ export function projectsRouter(db: DB) {
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
 
     const list = await db.select().from(environments).where(eq(environments.projectId, proj.id))
-    return c.json({ environments: list })
+    return c.json({ envs: list })
   })
 
-  app.post('/:orgRef/workspaces/:wsRef/projects/:projRef/environments', zValidator('json', z.object({
+  app.post('/:orgRef/workspaces/:wsRef/projects/:projRef/envs', zValidator('json', z.object({
     name: z.string().min(1),
     slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
   })), async (c) => {
@@ -133,10 +133,10 @@ export function projectsRouter(db: DB) {
       updatedAt: now,
     }
     await db.insert(environments).values(env)
-    return c.json({ environment: env }, 201)
+    return c.json({ env }, 201)
   })
 
-  app.delete('/:orgRef/workspaces/:wsRef/projects/:projRef/environments/:envRef', async (c) => {
+  app.delete('/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', async (c) => {
     const auth = c.get('auth')
     const ctx  = await resolveWorkspace(c.req.param('orgRef'), c.req.param('wsRef'), auth.userId)
     if (!ctx) return c.json({ error: 'Not found' }, 404)

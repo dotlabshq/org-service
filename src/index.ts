@@ -11,16 +11,15 @@ const app = new Hono()
 app.use('*', logger())
 app.get('/healthz', (c) => c.json({ ok: true, service: 'org-service' }))
 
-const env      = createEnv()
-const dbClient = env.libsql('DB')
+const env = createEnv()
 
-await runMigrations(dbClient, { app: 'org-service', dir: './migrations' })
+await runMigrations(env.db('DB'), { app: 'org-service', dir: './migrations' })
 
-const db = createDB(dbClient)
+const db = createDB(env.libsql('DB'))
 
-app.route('/v1', orgsRouter(db))
-app.route('/v1', workspacesRouter(db))
-app.route('/v1', projectsRouter(db))
+app.route('/', orgsRouter(db))
+app.route('/', workspacesRouter(db))
+app.route('/', projectsRouter(db))
 
 app.onError((err, c) => {
   console.error(err)

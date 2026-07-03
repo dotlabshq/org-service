@@ -1,6 +1,6 @@
 {
   "name": "@dotlabshq/org-service",
-  "version": "0.2.8",
+  "version": "0.2.12",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
     "ioredis": "5.10.1"
   },
   "devDependencies": {
-    "@baseworks/auth": "^0.2.3",
+    "@baseworks/auth": "^0.2.4",
     "@baseworks/core": "^0.2.1",
     "@baseworks/organization": "^0.2.1",
     "@dotlabshq/flect-sdk": "^0.1.5",

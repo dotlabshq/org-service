@@ -13,7 +13,7 @@ export function orgsRouter(db: DB) {
 
   app.use('*', requireAuth)
 
-  app.get('/orgs', async (c) => {
+  app.get('/', async (c) => {
     const auth = c.get('auth')
     const rows = await db
       .select({ org: organizations })
@@ -24,7 +24,7 @@ export function orgsRouter(db: DB) {
     return c.json({ orgs: rows.map(r => r.org) })
   })
 
-  app.post('/orgs', zValidator('json', z.object({
+  app.post('/', zValidator('json', z.object({
     name: z.string().min(1),
     slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
   })), async (c) => {
@@ -52,7 +52,7 @@ export function orgsRouter(db: DB) {
     return c.json({ org }, 201)
   })
 
-  app.get('/orgs/:ref', async (c) => {
+  app.get('/:ref', async (c) => {
     const ref  = c.req.param('ref')
     const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
     const org  = rows[0] ?? (await db.select().from(organizations).where(eq(organizations.shortId, ref)).limit(1))[0]
@@ -60,7 +60,7 @@ export function orgsRouter(db: DB) {
     return c.json({ org })
   })
 
-  app.patch('/orgs/:ref', zValidator('json', z.object({
+  app.patch('/:ref', zValidator('json', z.object({
     name: z.string().min(1).optional(),
     slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
   })), async (c) => {
@@ -81,7 +81,7 @@ export function orgsRouter(db: DB) {
     return c.json({ org: updated[0] })
   })
 
-  app.delete('/orgs/:ref', async (c) => {
+  app.delete('/:ref', async (c) => {
     const ref  = c.req.param('ref')
     const auth = c.get('auth')
     const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
@@ -97,7 +97,7 @@ export function orgsRouter(db: DB) {
     return c.json({ ok: true })
   })
 
-  app.get('/orgs/:ref/members', async (c) => {
+  app.get('/:ref/members', async (c) => {
     const ref  = c.req.param('ref')
     const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
     const org  = rows[0]
@@ -106,7 +106,7 @@ export function orgsRouter(db: DB) {
     return c.json({ members: list })
   })
 
-  app.post('/orgs/:ref/members', zValidator('json', z.object({
+  app.post('/:ref/members', zValidator('json', z.object({
     userId: z.string(),
     role:   z.enum(['owner', 'admin', 'member', 'viewer']).default('member'),
   })), async (c) => {
@@ -141,7 +141,7 @@ export function orgsRouter(db: DB) {
     return c.json({ member }, 201)
   })
 
-  app.delete('/orgs/:ref/members/:userId', async (c) => {
+  app.delete('/:ref/members/:userId', async (c) => {
     const ref    = c.req.param('ref')
     const userId = c.req.param('userId')
     const auth   = c.get('auth')

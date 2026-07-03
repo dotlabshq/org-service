@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and } from 'drizzle-orm'
 import { requireAuth } from '../lib/auth.js'
 import { generateId, generateShortId, generateSlug } from '@baseworks/core'
 import type { DB } from '../db/client.js'
@@ -74,7 +74,7 @@ export function projectsRouter(db: DB) {
     if (!ctx) return c.json({ error: 'Not found' }, 404)
 
     const projRef = c.req.param('projRef')
-    const rows    = await db.select().from(projects).where(eq(projects.slug, projRef)).limit(1)
+    const rows    = await db.select().from(projects).where(and(eq(projects.slug, projRef), eq(projects.workspaceId, ctx.ws.id))).limit(1)
     const proj    = rows[0]
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
     return c.json({ project: proj })
@@ -87,7 +87,7 @@ export function projectsRouter(db: DB) {
     if (ctx.role !== 'admin') return c.json({ error: 'Forbidden' }, 403)
 
     const projRef = c.req.param('projRef')
-    const rows    = await db.select().from(projects).where(eq(projects.slug, projRef)).limit(1)
+    const rows    = await db.select().from(projects).where(and(eq(projects.slug, projRef), eq(projects.workspaceId, ctx.ws.id))).limit(1)
     const proj    = rows[0]
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
     await db.delete(projects).where(eq(projects.id, proj.id))
@@ -101,7 +101,7 @@ export function projectsRouter(db: DB) {
     if (!ctx) return c.json({ error: 'Not found' }, 404)
 
     const projRef = c.req.param('projRef')
-    const rows    = await db.select().from(projects).where(eq(projects.slug, projRef)).limit(1)
+    const rows    = await db.select().from(projects).where(and(eq(projects.slug, projRef), eq(projects.workspaceId, ctx.ws.id))).limit(1)
     const proj    = rows[0]
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
 
@@ -119,7 +119,7 @@ export function projectsRouter(db: DB) {
     if (ctx.role === 'viewer') return c.json({ error: 'Forbidden' }, 403)
 
     const projRef = c.req.param('projRef')
-    const rows    = await db.select().from(projects).where(eq(projects.slug, projRef)).limit(1)
+    const rows    = await db.select().from(projects).where(and(eq(projects.slug, projRef), eq(projects.workspaceId, ctx.ws.id))).limit(1)
     const proj    = rows[0]
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
 
@@ -146,11 +146,11 @@ export function projectsRouter(db: DB) {
 
     const projRef = c.req.param('projRef')
     const envRef  = c.req.param('envRef')
-    const projRows = await db.select().from(projects).where(eq(projects.slug, projRef)).limit(1)
+    const projRows = await db.select().from(projects).where(and(eq(projects.slug, projRef), eq(projects.workspaceId, ctx.ws.id))).limit(1)
     const proj     = projRows[0]
     if (!proj || proj.workspaceId !== ctx.ws.id) return c.json({ error: 'Not found' }, 404)
 
-    const envRows = await db.select().from(environments).where(eq(environments.slug, envRef)).limit(1)
+    const envRows = await db.select().from(environments).where(and(eq(environments.slug, envRef), eq(environments.projectId, proj.id))).limit(1)
     const env     = envRows[0]
     if (!env || env.projectId !== proj.id) return c.json({ error: 'Not found' }, 404)
 

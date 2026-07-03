@@ -6,6 +6,7 @@ import { requireAuth } from '../lib/auth.js'
 import { generateId, generateShortId, generateSlug } from '@baseworks/core'
 import type { DB } from '../db/client.js'
 import { schema } from '../db/client.js'
+import { provisionDefaults } from './defaults.js'
 
 export function projectsRouter(db: DB) {
   const app = new Hono()
@@ -63,6 +64,7 @@ export function projectsRouter(db: DB) {
       updatedAt:   now,
     }
     await db.insert(projects).values(proj)
+    await provisionDefaults(db, { projectId: proj.id })
     return c.json({ project: proj }, 201)
   })
 

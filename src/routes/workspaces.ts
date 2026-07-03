@@ -6,6 +6,7 @@ import { requireAuth } from '../lib/auth.js'
 import { generateId, generateShortId, generateSlug } from '@baseworks/core'
 import type { DB } from '../db/client.js'
 import { schema } from '../db/client.js'
+import { provisionDefaults } from './defaults.js'
 
 export function workspacesRouter(db: DB) {
   const app = new Hono()
@@ -56,6 +57,7 @@ export function workspacesRouter(db: DB) {
       updatedAt:      now,
     }
     await db.insert(workspaces).values(ws)
+    await provisionDefaults(db, { workspaceId: ws.id })
     return c.json({ workspace: ws }, 201)
   })
 

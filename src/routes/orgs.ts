@@ -6,6 +6,7 @@ import { requireAuth } from '../lib/auth.js'
 import { generateId, generateShortId, generateSlug } from '@baseworks/core'
 import type { DB } from '../db/client.js'
 import { schema } from '../db/client.js'
+import { provisionDefaults } from './defaults.js'
 
 export function orgsRouter(db: DB) {
   const app = new Hono()
@@ -49,6 +50,7 @@ export function orgsRouter(db: DB) {
       createdAt:      now,
       updatedAt:      now,
     })
+    await provisionDefaults(db, { organizationId: org.id })
     return c.json({ org }, 201)
   })
 

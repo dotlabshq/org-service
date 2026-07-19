@@ -1,167 +1,99 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { eq, desc } from 'drizzle-orm'
 import { requireAuth } from '../lib/auth.js'
-import { generateId, generateShortId, generateSlug } from '@baseworks/core'
-import type { DB } from '../db/client.js'
-import { schema } from '../db/client.js'
-import { provisionDefaults } from './defaults.js'
+import { StoreError, type Store } from '../store.js'
+import { Role } from '@baseworks/org/events'
 
-export function orgsRouter(db: DB) {
+const slug = z.string().min(1).regex(/^[a-z0-9-]+$/)
+
+function fail(err: unknown): never {
+  if (err instanceof StoreError) throw err
+  throw new StoreError(500, 'internal', (err as Error).message)
+}
+
+export function orgsRouter(store: Store) {
   const app = new Hono()
-  const { organizations, orgMemberships } = schema
-
   app.use('*', requireAuth)
 
-  app.get('/', async (c) => {
+  async function requireOrg(ref: string, userId: string, roles?: Role[]): Promise<{ orgId: string }> {
+    const row = await store.orgRowByRef(ref)
+    if (!row) throw new StoreError(404, 'not_found')
+    if (roles) {
+      const role = await store.roleOf(row.id, userId)
+      if (!role || !roles.includes(role)) throw new StoreError(403, 'forbidden')
+    }
+    return { orgId: row.id }
+  }
+
+  app.get('/v1/orgs', async (c) => {
     const auth = c.get('auth')
-    const rows = await db
-      .select({ org: organizations })
-      .from(organizations)
-      .innerJoin(orgMemberships, eq(orgMemberships.organizationId, organizations.id))
-      .where(eq(orgMemberships.userId, auth.userId))
-      .orderBy(desc(organizations.createdAt))
-    return c.json({ orgs: rows.map(r => r.org) })
+    return c.json({ orgs: await store.listOrgsForUser(auth.userId) })
   })
 
-  app.post('/', zValidator('json', z.object({
-    name: z.string().min(1),
-    slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
-  })), async (c) => {
-    const auth  = c.get('auth')
+  app.post('/v1/orgs', zValidator('json', z.object({ name: z.string().min(1), slug: slug.optional() })), async (c) => {
+    const auth = c.get('auth')
     const input = c.req.valid('json')
-    const now   = Date.now()
-    const org   = {
-      id:        generateId(),
-      shortId:   generateShortId(),
-      slug:      input.slug ?? generateSlug(input.name),
-      name:      input.name,
-      metadata:  null,
-      createdAt: now,
-      updatedAt: now,
-    }
-    await db.insert(organizations).values(org)
-    await db.insert(orgMemberships).values({
-      id:             generateId(),
-      organizationId: org.id,
-      userId:         auth.userId,
-      role:           'admin',
-      createdAt:      now,
-      updatedAt:      now,
-    })
-    await provisionDefaults(db, { organizationId: org.id })
+    const org = await store.createOrg({ name: input.name, slug: input.slug, ownerId: auth.userId }).catch(fail)
     return c.json({ org }, 201)
   })
 
-  app.get('/:ref', async (c) => {
-    const ref  = c.req.param('ref')
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0] ?? (await db.select().from(organizations).where(eq(organizations.shortId, ref)).limit(1))[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
+  app.get('/v1/orgs/:ref', async (c) => {
+    const org = await store.getOrg(c.req.param('ref'))
+    if (!org) return c.json({ error: 'not_found' }, 404)
     return c.json({ org })
   })
 
-  app.patch('/:ref', zValidator('json', z.object({
-    name: z.string().min(1).optional(),
-    slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
-  })), async (c) => {
-    const ref  = c.req.param('ref')
+  app.patch('/v1/orgs/:ref', zValidator('json', z.object({ name: z.string().min(1).optional(), slug: slug.optional() })), async (c) => {
     const auth = c.get('auth')
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
-
-    const mem = await db.select().from(orgMemberships)
-      .where(eq(orgMemberships.organizationId, org.id))
-      .then(r => r.find(m => m.userId === auth.userId))
-    if (!mem || mem.role !== 'admin') return c.json({ error: 'Forbidden' }, 403)
-
-    const input = c.req.valid('json')
-    await db.update(organizations).set({ ...input, updatedAt: Date.now() }).where(eq(organizations.id, org.id))
-    const updated = await db.select().from(organizations).where(eq(organizations.id, org.id)).limit(1)
-    return c.json({ org: updated[0] })
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    const org = await store.updateOrg(orgId, c.req.valid('json'), auth.userId).catch(fail)
+    return c.json({ org })
   })
 
-  app.delete('/:ref', async (c) => {
-    const ref  = c.req.param('ref')
+  app.delete('/v1/orgs/:ref', async (c) => {
     const auth = c.get('auth')
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
-
-    const mem = await db.select().from(orgMemberships)
-      .where(eq(orgMemberships.organizationId, org.id))
-      .then(r => r.find(m => m.userId === auth.userId))
-    if (!mem || mem.role !== 'admin') return c.json({ error: 'Forbidden' }, 403)
-
-    await db.delete(organizations).where(eq(organizations.id, org.id))
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner'])
+    await store.archiveOrg(orgId, auth.userId).catch(fail)
     return c.json({ ok: true })
   })
 
-  app.get('/:ref/members', async (c) => {
-    const ref  = c.req.param('ref')
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
-    const list = await db.select().from(orgMemberships).where(eq(orgMemberships.organizationId, org.id))
-    return c.json({ members: list })
+  // ── metadata ──────────────────────────────────────────────────────────────
+
+  app.patch('/v1/orgs/:ref/metadata', zValidator('json', z.record(z.unknown())), async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    await store.setOrgMetadata(orgId, c.req.valid('json'), [], auth.userId).catch(fail)
+    return c.json({ ok: true })
   })
 
-  app.post('/:ref/members', zValidator('json', z.object({
-    userId: z.string(),
-    role:   z.enum(['owner', 'admin', 'member', 'viewer']).default('member'),
-  })), async (c) => {
-    const ref   = c.req.param('ref')
-    const auth  = c.get('auth')
+  app.delete('/v1/orgs/:ref/metadata/:key', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    await store.setOrgMetadata(orgId, {}, [c.req.param('key')], auth.userId).catch(fail)
+    return c.json({ ok: true })
+  })
+
+  // ── members ─────────────────────────────────────────────────────────────────
+
+  app.get('/v1/orgs/:ref/members', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin', 'member', 'viewer'])
+    return c.json({ members: await store.listMembers(orgId) })
+  })
+
+  app.post('/v1/orgs/:ref/members', zValidator('json', z.object({ userId: z.string().min(1), role: Role })), async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
     const input = c.req.valid('json')
-
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
-
-    const allMembers = await db.select().from(orgMemberships).where(eq(orgMemberships.organizationId, org.id))
-    const requester  = allMembers.find(m => m.userId === auth.userId)
-    const isSelf     = input.userId === auth.userId
-    const orgEmpty   = allMembers.length === 0
-
-    if (!requester && !(isSelf && orgEmpty)) return c.json({ error: 'Forbidden' }, 403)
-    if (requester && requester.role !== 'admin' && requester.role !== 'owner' && !(isSelf && orgEmpty)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
-
-    const now    = Date.now()
-    const member = {
-      id:             generateId(),
-      organizationId: org.id,
-      userId:         input.userId,
-      role:           input.role,
-      createdAt:      now,
-      updatedAt:      now,
-    }
-    await db.insert(orgMemberships).values(member)
+    const member = await store.addMember({ orgId, userId: input.userId, role: input.role, actor: auth.userId }).catch(fail)
     return c.json({ member }, 201)
   })
 
-  app.delete('/:ref/members/:userId', async (c) => {
-    const ref    = c.req.param('ref')
-    const userId = c.req.param('userId')
-    const auth   = c.get('auth')
-
-    const rows = await db.select().from(organizations).where(eq(organizations.slug, ref)).limit(1)
-    const org  = rows[0]
-    if (!org) return c.json({ error: 'Not found' }, 404)
-
-    const requester = await db.select().from(orgMemberships)
-      .where(eq(orgMemberships.organizationId, org.id))
-      .then(r => r.find(m => m.userId === auth.userId))
-
-    if (!requester || (requester.role !== 'admin' && requester.role !== 'owner' && auth.userId !== userId)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
-
-    await db.delete(orgMemberships)
-      .where(eq(orgMemberships.organizationId, org.id))
+  app.delete('/v1/orgs/:ref/members/:userId', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    await store.removeMember(orgId, c.req.param('userId'), auth.userId).catch(fail)
     return c.json({ ok: true })
   })
 

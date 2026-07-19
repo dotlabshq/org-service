@@ -1,7 +1,10 @@
 [app]
 name  = "org-service"
-image = "ghcr.io/dotlabshq/org-service:0.1.0"
+image = "ghcr.io/dotlabshq/org-service:0.4.0"
 
-[[databases]]
-binding = "DB"
-name    = "clave-db"
+# org-service backs onto its own private foldbase sibling (ADR 0001) — no direct
+# DB. The sibling URL + service token are injected by the platform; the tenant
+# is pinned to 'platform' because org ids are read-model keys, not tenants.
+[env]
+FOLDBASE_TENANT = "platform"
+# FOLDBASE_SERVICE_URL, FOLDBASE_TOKEN — injected at deploy.

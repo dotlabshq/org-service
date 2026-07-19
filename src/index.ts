@@ -1,33 +1,22 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
-import { createEnv, runMigrations } from '@dotlabshq/flect-sdk'
-import { createDB } from './db/client.js'
-import { orgsRouter } from './routes/orgs.js'
-import { workspacesRouter } from './routes/workspaces.js'
-import { projectsRouter } from './routes/projects.js'
-
-const app = new Hono()
-app.use('*', logger())
-app.get('/healthz', (c) => c.json({ ok: true, service: 'org-service' }))
+import { createEnv } from '@baseworks/sdk'
+import { createApp, registerDefinitions } from './app.js'
 
 const env = createEnv()
 
-await runMigrations(env.db('DB'), { app: 'org-service', dir: './migrations' })
+// org-service pins tenant 'platform' (FOLDBASE_TENANT); org ids are read-model
+// keys, not tenants (ADR 0001). The foldbase sibling is its private store.
+const fb = env.service('foldbase')
 
-const db = createDB(env.libsql('DB'))
+await registerDefinitions(fb)
 
-app.route('/', orgsRouter(db))
-app.route('/', workspacesRouter(db))
-app.route('/', projectsRouter(db))
+const root = new Hono()
+root.use('*', logger())
+root.route('/', createApp(fb))
 
-app.onError((err, c) => {
-  console.error(err)
-  return c.json({ error: 'Internal server error' }, 500)
-})
-
-const port = parseInt(process.env['PORT'] ?? '3000')
-
-serve({ fetch: app.fetch, port }, () => {
+const port = Number(env.var('PORT') ?? 3000)
+serve({ fetch: root.fetch, port }, () => {
   console.log(`org-service listening on :${port}`)
 })

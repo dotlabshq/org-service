@@ -1,0 +1,240 @@
+import type {
+  Organization,
+  Scope,
+  Membership,
+  Role,
+  ScopeKind,
+  RegisteredApp,
+  AppPolicy,
+  AppManifest,
+  EffectiveRole,
+  CheckResult,
+} from './types.js'
+
+export type {
+  Organization,
+  Scope,
+  Workspace,
+  Project,
+  Environment,
+  Membership,
+  Role,
+  ScopeKind,
+  OrgRow,
+  ScopeRow,
+  MemberRow,
+  RegisteredApp,
+  AppPolicy,
+  AppPolicyRow,
+  AppRow,
+  AppManifest,
+  EffectiveRole,
+  CheckResult,
+} from './types.js'
+
+/** Forwarded end-user identity (X-Auth-*) for a trusted service caller. */
+export interface AuthContext {
+  uid?: string
+  role?: string
+  email?: string
+}
+
+export interface OrgClientOptions {
+  /** Base URL of org-service (resolved by the SDK, e.g. ORG_SERVICE_URL). */
+  baseUrl: string
+  /** Bearer token — the caller's service or user token. */
+  token?: string
+  /** Forwarded end-user identity. */
+  auth?: AuthContext
+  /** Injectable fetch (tests / non-global environments). */
+  fetch?: typeof fetch
+}
+
+/** Thrown on any non-2xx response from org-service. */
+export class OrgError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message?: string,
+  ) {
+    super(message ?? code)
+    this.name = 'OrgError'
+  }
+}
+
+/** Minimal ApiClient shape — structurally compatible with @baseworks/cli. */
+export interface HttpClient {
+  api<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T>
+  get<T>(path: string, headers?: Record<string, string>): Promise<T>
+  post<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T>
+  patch<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T>
+  del<T>(path: string, headers?: Record<string, string>): Promise<T>
+}
+
+/**
+ * Typed HTTP client for org-service. Zod-free at the boundary (the service
+ * validates); this is a thin, ergonomic wrapper over the REST surface. The
+ * `.http` accessor exposes a generic ApiClient the CLI plugin consumes.
+ */
+export class OrgClient {
+  private readonly baseUrl: string
+  private readonly fetchImpl: typeof fetch
+  constructor(private readonly opts: OrgClientOptions) {
+    this.baseUrl = opts.baseUrl.replace(/\/$/, '')
+    this.fetchImpl = opts.fetch ?? globalThis.fetch
+  }
+
+  /** Return a new client that forwards a different end-user identity. */
+  withAuth(auth: AuthContext): OrgClient {
+    return new OrgClient({ ...this.opts, auth })
+  }
+
+  private headers(json: boolean, extra: Record<string, string> = {}): Record<string, string> {
+    const h: Record<string, string> = {}
+    if (json) h['Content-Type'] = 'application/json'
+    if (this.opts.token) h['Authorization'] = `Bearer ${this.opts.token}`
+    if (this.opts.auth?.uid) h['X-Auth-UID'] = this.opts.auth.uid
+    if (this.opts.auth?.role) h['X-Auth-Role'] = this.opts.auth.role
+    if (this.opts.auth?.email) h['X-Auth-Email'] = this.opts.auth.email
+    return { ...h, ...extra }
+  }
+
+  async api<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method,
+      headers: this.headers(body !== undefined, extra),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
+    if (res.status === 204) return null as T
+    const text = await res.text()
+    const data = text ? (JSON.parse(text) as unknown) : undefined
+    if (!res.ok) {
+      const e = (data ?? {}) as { error?: string | { code?: string; message?: string }; message?: string }
+      const code = typeof e.error === 'string' ? e.error : e.error?.code ?? 'error'
+      const msg = typeof e.error === 'object' ? e.error?.message : e.message
+      throw new OrgError(res.status, code, msg)
+    }
+    return data as T
+  }
+
+  /** Generic ApiClient (get/post/patch/del) — used by the CLI plugin. */
+  get http(): HttpClient {
+    return {
+      api: this.api.bind(this),
+      get: <T>(p: string, h?: Record<string, string>) => this.api<T>('GET', p, undefined, h),
+      post: <T>(p: string, b: unknown, h?: Record<string, string>) => this.api<T>('POST', p, b, h),
+      patch: <T>(p: string, b: unknown, h?: Record<string, string>) => this.api<T>('PATCH', p, b, h),
+      del: <T>(p: string, h?: Record<string, string>) => this.api<T>('DELETE', p, undefined, h),
+    }
+  }
+
+  // ── organizations ─────────────────────────────────────────────────────────
+
+  async listOrgs(): Promise<Organization[]> {
+    const { orgs } = await this.api<{ orgs: Organization[] }>('GET', '/v1/orgs')
+    return orgs
+  }
+  async getOrg(ref: string): Promise<Organization> {
+    const { org } = await this.api<{ org: Organization }>('GET', `/v1/orgs/${ref}`)
+    return org
+  }
+  async createOrg(input: { name: string; slug?: string }): Promise<Organization> {
+    const { org } = await this.api<{ org: Organization }>('POST', '/v1/orgs', input)
+    return org
+  }
+  async updateOrg(ref: string, input: { name?: string; slug?: string }): Promise<Organization> {
+    const { org } = await this.api<{ org: Organization }>('PATCH', `/v1/orgs/${ref}`, input)
+    return org
+  }
+  async deleteOrg(ref: string): Promise<void> {
+    await this.api('DELETE', `/v1/orgs/${ref}`)
+  }
+  async setOrgMetadata(ref: string, patch: Record<string, unknown>): Promise<void> {
+    await this.api('PATCH', `/v1/orgs/${ref}/metadata`, patch)
+  }
+  async deleteOrgMetadataKey(ref: string, key: string): Promise<void> {
+    await this.api('DELETE', `/v1/orgs/${ref}/metadata/${key}`)
+  }
+
+  // ── memberships ───────────────────────────────────────────────────────────
+
+  async listMembers(ref: string): Promise<Membership[]> {
+    const { members } = await this.api<{ members: Membership[] }>('GET', `/v1/orgs/${ref}/members`)
+    return members
+  }
+  async addMember(ref: string, input: { userId: string; role: Role }): Promise<Membership> {
+    const { member } = await this.api<{ member: Membership }>('POST', `/v1/orgs/${ref}/members`, input)
+    return member
+  }
+  async removeMember(ref: string, userId: string): Promise<void> {
+    await this.api('DELETE', `/v1/orgs/${ref}/members/${userId}`)
+  }
+
+  // ── scopes (workspaces / projects / environments) ──────────────────────────
+
+  async listWorkspaces(orgRef: string): Promise<Scope[]> {
+    const { workspaces } = await this.api<{ workspaces: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces`)
+    return workspaces
+  }
+  async createWorkspace(orgRef: string, input: { name: string; slug?: string }): Promise<Scope> {
+    const { workspace } = await this.api<{ workspace: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces`, input)
+    return workspace
+  }
+  async listProjects(orgRef: string, wsRef: string): Promise<Scope[]> {
+    const { projects } = await this.api<{ projects: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects`)
+    return projects
+  }
+  async createProject(orgRef: string, wsRef: string, input: { name: string; slug?: string }): Promise<Scope> {
+    const { project } = await this.api<{ project: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects`, input)
+    return project
+  }
+  async listEnvironments(orgRef: string, wsRef: string, projRef: string): Promise<Scope[]> {
+    const { envs } = await this.api<{ envs: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`)
+    return envs
+  }
+  async createEnvironment(orgRef: string, wsRef: string, projRef: string, input: { name: string; slug?: string }): Promise<Scope> {
+    const { env } = await this.api<{ env: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`, input)
+    return env
+  }
+
+  // ── PDP (access decisions + app registry) ──────────────────────────────────
+
+  /** The effective role a user holds at a scope (org role, inherited downward). */
+  async effectiveRole(scopeId: string, userId?: string): Promise<EffectiveRole> {
+    const q = new URLSearchParams({ scope: scopeId, ...(userId ? { user: userId } : {}) })
+    return this.api<EffectiveRole>('GET', `/authz/role?${q}`)
+  }
+
+  /** Ask the PDP whether an app action is allowed at a scope (deny-by-default). */
+  async check(input: { app: string; action: string; scopeId: string; userId?: string }): Promise<CheckResult> {
+    return this.api<CheckResult>('POST', '/authz/check', {
+      app: input.app,
+      action: input.action,
+      scope_id: input.scopeId,
+      ...(input.userId ? { user_id: input.userId } : {}),
+    })
+  }
+
+  /** Register (or refresh) an app's policy manifest. */
+  async registerApp(manifest: AppManifest): Promise<RegisteredApp> {
+    const { app } = await this.api<{ app: RegisteredApp }>('POST', '/apps/register', manifest)
+    return app
+  }
+
+  async listApps(): Promise<RegisteredApp[]> {
+    const { apps } = await this.api<{ apps: RegisteredApp[] }>('GET', '/apps')
+    return apps
+  }
+
+  async listAppPolicies(name: string): Promise<AppPolicy[]> {
+    const { policies } = await this.api<{ policies: AppPolicy[] }>('GET', `/apps/${encodeURIComponent(name)}/policies`)
+    return policies
+  }
+}
+
+/** Factory used by the SDK capability registry. */
+export function createOrgClient(opts: OrgClientOptions): OrgClient {
+  return new OrgClient(opts)
+}
+
+export type { ScopeKind as Kind }

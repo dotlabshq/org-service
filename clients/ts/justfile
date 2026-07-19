@@ -1,0 +1,16 @@
+# npm publish for this @baseworks/* client. `just publish` = build + publish current
+# version; `just publish-patch` bumps the patch first. pnpm rewrites workspace:* deps
+# to their published versions on publish. Requires `npm login` (public scope).
+default:
+    @just --list
+
+build:
+    pnpm build
+
+publish: build
+    pnpm publish --access public --no-git-checks
+
+publish-patch:
+    npm version patch --no-git-tag-version
+    pnpm build
+    pnpm publish --access public --no-git-checks

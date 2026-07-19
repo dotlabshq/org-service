@@ -1,0 +1,9 @@
+{
+  "extends": "@baseworks/tsconfig/base",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"],
+  "exclude": ["src/__tests__"]
+}

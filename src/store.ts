@@ -119,12 +119,13 @@ export function createStore(fb: FoldBase) {
     return byShort.rows[0] ?? null
   }
 
-  async function listOrgsForUser(userId: string): Promise<Organization[]> {
+  async function listOrgsForUser(userId: string): Promise<(Organization & { role: Role })[]> {
     const mem = await q.query<MemberRow>('org_members', { where: { user_id: { eq: userId } } })
-    const orgIds = mem.rows.map((m) => m.org_id)
-    if (!orgIds.length) return []
-    const res = await q.query<OrgRow>('orgs', { where: { id: { in: orgIds } }, sort: ['-created_at'] })
-    return res.rows.map(toOrg)
+    if (!mem.rows.length) return []
+    // Aynı sorgudan gelen üyelik satırları rolü zaten taşıyor — ayrıca sorgulamaya gerek yok.
+    const roleByOrg = new Map(mem.rows.map((m) => [m.org_id, m.role]))
+    const res = await q.query<OrgRow>('orgs', { where: { id: { in: [...roleByOrg.keys()] } }, sort: ['-created_at'] })
+    return res.rows.map((row) => ({ ...toOrg(row), role: roleByOrg.get(row.id) ?? 'viewer' }))
   }
 
   async function createOrg(input: { name: string; slug?: string; ownerId: string }): Promise<Organization> {

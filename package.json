@@ -15,7 +15,7 @@
     "@baseworks/core": "^0.2.1",
     "@baseworks/foldbase": "workspace:*",
     "@baseworks/org": "workspace:*",
-    "@baseworks/sdk": "workspace:*"
+    "@baseworks/sdk": "^0.1.2"
   },
   "devDependencies": {
     "@baseworks/auth": "^0.2.4",

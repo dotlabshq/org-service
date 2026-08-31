@@ -112,11 +112,18 @@ export function createStore(fb: FoldBase) {
 
   // ── organizations ──────────────────────────────────────────────────────────
 
+  /**
+   * Bir org'a üç yoldan da erişilebilir: slug, short_id ve id. Kimliği tutan
+   * çağıranın (ör. bir kapı servisi) slug'ı ayrıca taşımak zorunda kalmaması
+   * için birincil anahtar da bir ref sayılır.
+   */
   async function orgRowByRef(ref: string): Promise<OrgRow | null> {
     const bySlug = await q.query<OrgRow>('orgs', { where: { slug: { eq: ref } }, limit: 1 })
     if (bySlug.rows[0]) return bySlug.rows[0]
     const byShort = await q.query<OrgRow>('orgs', { where: { short_id: { eq: ref } }, limit: 1 })
-    return byShort.rows[0] ?? null
+    if (byShort.rows[0]) return byShort.rows[0]
+    const byId = await q.query<OrgRow>('orgs', { where: { id: { eq: ref } }, limit: 1 })
+    return byId.rows[0] ?? null
   }
 
   async function listOrgsForUser(userId: string): Promise<(Organization & { role: Role })[]> {
@@ -126,6 +133,16 @@ export function createStore(fb: FoldBase) {
     const roleByOrg = new Map(mem.rows.map((m) => [m.org_id, m.role]))
     const res = await q.query<OrgRow>('orgs', { where: { id: { in: [...roleByOrg.keys()] } }, sort: ['-created_at'] })
     return res.rows.map((row) => ({ ...toOrg(row), role: roleByOrg.get(row.id) ?? 'viewer' }))
+  }
+
+  /**
+   * Tüm org'lar — üyelikten bağımsız. Platform işletmesi için: bir kaynağı
+   * (ör. IP adresi) hangi org'a vereceğini seçen operatör, üyesi olmadığı
+   * org'ları da görmek zorundadır. Uç servis token'ına kapalıdır (routes/orgs).
+   */
+  async function listAllOrgs(limit = 500): Promise<Organization[]> {
+    const res = await q.query<OrgRow>('orgs', { sort: ['-created_at'], limit })
+    return res.rows.map(toOrg)
   }
 
   async function createOrg(input: { name: string; slug?: string; ownerId: string }): Promise<Organization> {
@@ -445,7 +462,7 @@ export function createStore(fb: FoldBase) {
 
   return {
     // orgs
-    orgRowByRef, listOrgsForUser, createOrg, getOrg, updateOrg, setOrgMetadata, archiveOrg,
+    orgRowByRef, listOrgsForUser, listAllOrgs, createOrg, getOrg, updateOrg, setOrgMetadata, archiveOrg,
     // members
     roleOf, listMembers, addMember, removeMember,
     // scopes

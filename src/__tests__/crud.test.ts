@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { bootTestFoldBase, makeTestApp, makeToken, USER_ID, type TestFoldBase } from './setup.js'
+import { bootTestFoldBase, makeServiceToken, makeTestApp, makeToken, USER_ID, type TestFoldBase } from './setup.js'
 
 type App = Awaited<ReturnType<typeof makeTestApp>>
 let fb: TestFoldBase
@@ -69,6 +69,8 @@ describe('orgs', () => {
     const { org } = await createOrg()
     expect((await json<{ org: { id: string } }>(await app.get('/v1/orgs/acme'))).org.id).toBe(org.id)
     expect((await json<{ org: { id: string } }>(await app.get(`/v1/orgs/${org.shortId}`))).org.id).toBe(org.id)
+    // id de bir ref'tir: kimliği tutan çağıran slug'ı ayrıca taşımak zorunda değil.
+    expect((await json<{ org: { id: string } }>(await app.get(`/v1/orgs/${org.id}`))).org.id).toBe(org.id)
   })
 
   it('404 for unknown org', async () => {
@@ -191,5 +193,22 @@ describe('scopes (workspace / project / environment)', () => {
     await app.post('/v1/orgs/acme/members', { userId: 'v1', role: 'viewer' })
     const viewer = makeToken('v1')
     expect((await app.post('/v1/orgs/acme/workspaces', { name: 'X', slug: 'x' }, viewer)).status).toBe(403)
+  })
+})
+
+describe('all-orgs', () => {
+  it('lists every org for a service token, regardless of membership', async () => {
+    await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' })
+    // Başka bir kullanıcının org'u: servis listesinde yine görünmeli.
+    await app.post('/v1/orgs', { name: 'Other', slug: 'other' }, makeToken('u-other'))
+
+    const { orgs } = await json<{ orgs: Array<{ slug: string }> }>(
+      await app.get('/v1/all-orgs', makeServiceToken()),
+    )
+    expect(orgs.map((o) => o.slug).sort()).toEqual(['acme', 'other'])
+  })
+
+  it('refuses a user token — this is not a user surface', async () => {
+    expect((await app.get('/v1/all-orgs')).status).toBe(403)
   })
 })

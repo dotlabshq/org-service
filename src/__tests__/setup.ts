@@ -36,6 +36,11 @@ export function makeToken(userId = USER_ID): string {
   return signHs256Jwt({ sub: userId, type: 'human' }, JWT_SECRET, 3600)
 }
 
+/** Servis token'ı — kullanıcı yüzeyi olmayan uçlar için (ör. /v1/all-orgs). */
+export function makeServiceToken(name = 'svc'): string {
+  return signHs256Jwt({ sub: name, type: 'service' }, JWT_SECRET, 3600)
+}
+
 /**
  * Build an isolated org-service app on the shared foldbase. Each app gets a
  * unique tenant so tests don't see each other's events.

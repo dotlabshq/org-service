@@ -1,0 +1,29 @@
+# org-service — baseworks-ts monorepo KÖKÜNDEN build edilir:
+#   podman build -f projects/org-service/Dockerfile.workspace -t org-service:<tag> .
+#
+# Servis TS kaynaktan (tsx) çalışır: workspace client paketleri (@baseworks/*) tsup ile
+# derlenir, servis kodu derlenmez — dev ile aynı yol, tek derleme adımı.
+FROM node:22-alpine AS build
+RUN corepack enable
+WORKDIR /repo
+ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
+
+COPY pnpm-workspace.yaml package.json ./
+COPY packages ./packages
+COPY projects/foldbase/clients/ts ./projects/foldbase/clients/ts
+COPY projects/foldbase/package.json ./projects/foldbase/package.json
+COPY projects/iam-service ./projects/iam-service
+COPY projects/org-service ./projects/org-service
+COPY projects/auth-service/package.json ./projects/auth-service/package.json
+
+RUN pnpm install --no-frozen-lockfile
+# Client paketleri dist üretir (servisler bunları import eder)
+RUN pnpm -r --filter './projects/*/clients/ts' build
+
+FROM node:22-alpine AS runner
+RUN corepack enable && adduser -S -u 1001 svc
+WORKDIR /repo
+ENV NODE_ENV=production
+COPY --from=build /repo /repo
+USER svc
+CMD ["./projects/org-service/node_modules/.bin/tsx", "projects/org-service/src/index.ts"]

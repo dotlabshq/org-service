@@ -39,6 +39,16 @@ export interface MemberRow {
   updated_at: number
 }
 
+export interface InvitationRow {
+  id: string
+  org_id: string
+  email: string
+  role: Role
+  invited_by: string
+  created_at: number
+  updated_at: number
+}
+
 export interface AppRow {
   id: string
   name: string
@@ -94,6 +104,20 @@ export interface Membership {
   role: Role
   createdAt: number
   updatedAt: number
+}
+
+export interface Invitation {
+  id: string
+  organizationId: string
+  email: string
+  role: Role
+  invitedBy: string
+  createdAt: number
+  updatedAt: number
+  // Enriched on the invitee-facing list (`GET /v1/invitations`) so the CLI can
+  // show which org an invite is for without a second lookup.
+  orgSlug?: string
+  orgName?: string
 }
 
 // ── PDP (app registry + access decisions) ─────────────────────────────────────

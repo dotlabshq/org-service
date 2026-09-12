@@ -21,6 +21,8 @@ type OrgMeta = OrgRow & { metadata?: Record<string, unknown> };
 type WsRow   = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
 type ProjRow = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
 type EnvRow  = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
+type Membership = { id: string; organizationId: string; userId: string; role: string; createdAt: number; updatedAt: number };
+type Invitation = { id: string; organizationId: string; email: string; role: string; invitedBy: string; createdAt: number; updatedAt: number; orgSlug?: string; orgName?: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ function listOpts(cmd: Command): { output: string; org?: string; ws?: string; pr
 //        flect org meta ...
 
 export function buildOrgCommand(deps: OrgCliDeps): Command {
-  const { http } = deps;
+  const { http, ctx } = deps;
   const cli = deps.cliName ?? 'cli';
 
   const listOrgs = async (opts: { output: string }) => {
@@ -200,6 +202,175 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
   );
 
   cmd.addCommand(meta);
+
+  // ── members sub-group ───────────────────────────────────────────────────────
+  // flect org members            → list members of the active org
+  // flect org members add <uid>  → add a member directly (by user id)
+  // flect org members rm  <uid>  → remove a member
+  const listMembers = async (opts: { org?: string; output: string }) => {
+    const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+    const res     = await http.get<{ members: Membership[] }>(`/v1/orgs/${orgSlug}/members`).catch(e => { console.error(e.message); process.exit(1); });
+    printOutput(res.members, opts.output, (wide) => {
+      table(res.members, [
+        { key: 'userId',    label: 'USER ID' },
+        { key: 'role',      label: 'ROLE' },
+        { key: 'createdAt', label: 'JOINED', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'id',        label: 'FULL ID', wide: true },
+      ] as ColDef<Membership>[], { wide, emptyHint: `No members yet.` } as TableOpts & { wide: boolean });
+      summary(`${res.members.length} member${res.members.length !== 1 ? 's' : ''}`);
+    }, 'userId');
+  };
+
+  const members = new Command('members')
+    .aliases(['member'])
+    .description('Manage org members')
+    .enablePositionalOptions()
+    .option('--org <slug>', 'Override active org')
+    .option(...outputOption())
+    .action(listMembers);
+
+  members.addCommand(
+    new Command('ls')
+      .description('List members (alias of the bare command)')
+      .option('--org <slug>', 'Override active org')
+      .option(...outputOption())
+      .action(function (this: Command) { return listMembers(listOpts(this)); }),
+  );
+
+  members.addCommand(
+    new Command('add').argument('<userId>')
+      .description('Add a member by user id')
+      .option('--role <role>', 'owner | admin | member | viewer', 'member')
+      .option('--org <slug>', 'Override active org')
+      .action(async (userId: string, opts: { role: string; org?: string }) => {
+        const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+        await http.post(`/v1/orgs/${orgSlug}/members`, { userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
+        success(`Member added: ${userId} (${opts.role})`);
+      }),
+  );
+
+  members.addCommand(
+    new Command('rm').aliases(['remove', 'delete']).argument('<userId>')
+      .description('Remove a member')
+      .option('--org <slug>', 'Override active org')
+      .action(async (userId: string, opts: { org?: string }) => {
+        const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+        await http.del(`/v1/orgs/${orgSlug}/members/${userId}`).catch(e => { console.error(e.message); process.exit(1); });
+        success(`Member removed: ${userId}`);
+      }),
+  );
+
+  cmd.addCommand(members);
+
+  // ── invite (owner/admin) ────────────────────────────────────────────────────
+  // flect org invite <email> --role  → send a pending invitation
+  cmd.addCommand(
+    new Command('invite').argument('<email>')
+      .description('Invite a user to the org by email (they accept on next login)')
+      .option('--role <role>', 'owner | admin | member | viewer', 'member')
+      .option('--org <slug>', 'Override active org')
+      .action(async (email: string, opts: { role: string; org?: string }) => {
+        const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+        const res = await http.post<{ invitation: Invitation }>(`/v1/orgs/${orgSlug}/invitations`, { email, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
+        success(`Invitation sent to ${res.invitation.email} (${res.invitation.role})`);
+        kv([['id', res.invitation.id], ['email', res.invitation.email], ['role', res.invitation.role]]);
+      }),
+  );
+
+  // ── invites sub-group (owner/admin) ─────────────────────────────────────────
+  // flect org invites            → list pending invitations for the active org
+  // flect org invites revoke <id>
+  const listOrgInvites = async (opts: { org?: string; output: string }) => {
+    const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+    const res     = await http.get<{ invitations: Invitation[] }>(`/v1/orgs/${orgSlug}/invitations`).catch(e => { console.error(e.message); process.exit(1); });
+    printOutput(res.invitations, opts.output, (wide) => {
+      table(res.invitations, [
+        { key: 'email',     label: 'EMAIL' },
+        { key: 'role',      label: 'ROLE' },
+        { key: 'invitedBy', label: 'INVITED BY', wide: true },
+        { key: 'createdAt', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'id',        label: 'ID' },
+      ] as ColDef<Invitation>[], { wide, emptyHint: `No pending invitations.  Run: ${cli} org invite <email>` } as TableOpts & { wide: boolean });
+      summary(`${res.invitations.length} pending invitation${res.invitations.length !== 1 ? 's' : ''}`);
+    }, 'email');
+  };
+
+  const invites = new Command('invites')
+    .description('Pending invitations for the org')
+    .enablePositionalOptions()
+    .option('--org <slug>', 'Override active org')
+    .option(...outputOption())
+    .action(listOrgInvites);
+
+  invites.addCommand(
+    new Command('ls')
+      .description('List pending invitations (alias of the bare command)')
+      .option('--org <slug>', 'Override active org')
+      .option(...outputOption())
+      .action(function (this: Command) { return listOrgInvites(listOpts(this)); }),
+  );
+
+  invites.addCommand(
+    new Command('revoke').aliases(['rm', 'delete']).argument('<id>')
+      .description('Revoke a pending invitation')
+      .option('--org <slug>', 'Override active org')
+      .action(async (id: string, opts: { org?: string }) => {
+        const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+        await http.del(`/v1/orgs/${orgSlug}/invitations/${id}`).catch(e => { console.error(e.message); process.exit(1); });
+        success(`Invitation revoked: ${id}`);
+      }),
+  );
+
+  cmd.addCommand(invites);
+  return cmd;
+}
+
+// ─── buildInvitesCommand ──────────────────────────────────────────────────────
+// Invitee-facing, top-level. Matched on the caller's token email server-side.
+// Usage: flect invites             → list my pending invitations
+//        flect invites accept <id> → accept one (join the org)
+export function buildInvitesCommand(deps: OrgCliDeps): Command {
+  const { http } = deps;
+  const cli = deps.cliName ?? 'cli';
+
+  const listMine = async (opts: { output: string }) => {
+    const res = await http.get<{ invitations: Invitation[] }>('/v1/invitations').catch(e => { console.error(e.message); process.exit(1); });
+    printOutput(res.invitations, opts.output, (wide) => {
+      table(res.invitations, [
+        { key: 'orgName',   label: 'ORG' },
+        { key: 'orgSlug',   label: 'SLUG' },
+        { key: 'role',      label: 'ROLE' },
+        { key: 'invitedBy', label: 'INVITED BY', wide: true },
+        { key: 'createdAt', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'id',        label: 'ID' },
+      ] as ColDef<Invitation>[], { wide, emptyHint: `No invitations for you.` } as TableOpts & { wide: boolean });
+      summary(`${res.invitations.length} invitation${res.invitations.length !== 1 ? 's' : ''} — accept with: ${cli} invites accept <id>`);
+    }, 'id');
+  };
+
+  const cmd = new Command('invites')
+    .description('Invitations addressed to you')
+    .enablePositionalOptions()
+    .option(...outputOption())
+    .action(listMine);
+
+  cmd.addCommand(
+    new Command('ls')
+      .description('List my invitations (alias of the bare command)')
+      .option(...outputOption())
+      .action(function (this: Command) { return listMine(listOpts(this)); }),
+  );
+
+  cmd.addCommand(
+    new Command('accept').argument('<id>')
+      .description('Accept an invitation and join the org')
+      .action(async (id: string) => {
+        const res = await http.post<{ member: Membership }>(`/v1/invitations/${id}/accept`, {}).catch(e => { console.error(e.message); process.exit(1); });
+        success(`Joined org as ${res.member.role}.`);
+        kv([['org_id', res.member.organizationId], ['role', res.member.role]]);
+      }),
+  );
+
   return cmd;
 }
 

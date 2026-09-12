@@ -1,5 +1,5 @@
 import { defineProjection, type PolicyDef } from '@baseworks/foldbase'
-import { OrgEvents, ScopeEvents, MembershipEvents, AppEvents, AppPolicyEvents } from './events.js'
+import { OrgEvents, ScopeEvents, MembershipEvents, InvitationEvents, AppEvents, AppPolicyEvents } from './events.js'
 
 /**
  * Read-model definitions the service registers on boot (idempotent, like
@@ -62,6 +62,20 @@ export const readOrgMembers = defineProjection('org_members', MembershipEvents, 
   MemberRemoved: on.MemberRemoved.delete(),
 }))
 
+export const readOrgInvitations = defineProjection('org_invitations', InvitationEvents, (on) => ({
+  InvitationCreated: on.InvitationCreated.upsert((e) => ({
+    org_id: e.orgId,
+    email: e.email,
+    role: e.role,
+    invited_by: e.invitedBy,
+    created_at: e.at,
+  })),
+  // Accepting or revoking removes the pending row; the events remain the audit
+  // trail, and acceptance is mirrored by a MemberAdded on the membership stream.
+  InvitationAccepted: on.InvitationAccepted.delete(),
+  InvitationRevoked: on.InvitationRevoked.delete(),
+}))
+
 export const readApps = defineProjection('apps', AppEvents, (on) => ({
   AppRegistered: on.AppRegistered.upsert((e) => ({
     name: e.name,
@@ -82,13 +96,14 @@ export const readAppPolicies = defineProjection('app_policies', AppPolicyEvents,
   })),
 }))
 
-export const PROJECTIONS = [readOrgs, readScopes, readOrgMembers, readApps, readAppPolicies] as const
+export const PROJECTIONS = [readOrgs, readScopes, readOrgMembers, readOrgInvitations, readApps, readAppPolicies] as const
 
 /** Permissive policies for the service's own `admin` identity (see ADR 0001). */
 export const POLICIES: PolicyDef[] = [
   { name: 'orgs', role: 'admin' },
   { name: 'scopes', role: 'admin' },
   { name: 'org_members', role: 'admin' },
+  { name: 'org_invitations', role: 'admin' },
   { name: 'apps', role: 'admin' },
   { name: 'app_policies', role: 'admin' },
 ]

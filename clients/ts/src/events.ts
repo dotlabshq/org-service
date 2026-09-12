@@ -83,6 +83,30 @@ export const MembershipEvents = defineAggregate('membership', {
   MemberRemoved: z.object({}),
 })
 
+// ── invitation ──────────────────────────────────────────────────────────────
+//
+// A pending grant addressed to an *email* rather than a user id — the piece the
+// membership model can't express, since `MemberAdded` needs a concrete userId up
+// front. An owner/admin creates one; the invitee resolves it on their next login
+// (email is matched against the token's `email` claim) and `InvitationAccepted`
+// materializes a `MemberAdded`. One stream per invitation; the row is deleted on
+// accept/revoke (the event log stays the audit trail, like memberships).
+
+export const InvitationEvents = defineAggregate('invitation', {
+  InvitationCreated: z.object({
+    orgId: z.string().min(1),
+    email: z.string().min(1), // normalized (lowercased, trimmed) by the service
+    role: Role,
+    invitedBy: z.string().min(1),
+    at: z.number().int(),
+  }),
+  InvitationAccepted: z.object({
+    userId: z.string().min(1),
+    at: z.number().int(),
+  }),
+  InvitationRevoked: z.object({}),
+})
+
 // ── app registry + policy (the PDP) ───────────────────────────────────────────
 //
 // The PDP answers "may user U do action A at scope S?". Apps register a manifest

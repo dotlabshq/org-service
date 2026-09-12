@@ -2,6 +2,7 @@ import type {
   Organization,
   Scope,
   Membership,
+  Invitation,
   Role,
   ScopeKind,
   RegisteredApp,
@@ -18,11 +19,13 @@ export type {
   Project,
   Environment,
   Membership,
+  Invitation,
   Role,
   ScopeKind,
   OrgRow,
   ScopeRow,
   MemberRow,
+  InvitationRow,
   RegisteredApp,
   AppPolicy,
   AppPolicyRow,
@@ -168,6 +171,33 @@ export class OrgClient {
   }
   async removeMember(ref: string, userId: string): Promise<void> {
     await this.api('DELETE', `/v1/orgs/${ref}/members/${userId}`)
+  }
+
+  // ── invitations ─────────────────────────────────────────────────────────────
+
+  /** Pending invitations for an org (owner/admin). */
+  async listInvitations(ref: string): Promise<Invitation[]> {
+    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', `/v1/orgs/${ref}/invitations`)
+    return invitations
+  }
+  /** Invite an email to an org with a role (owner/admin). Idempotent per email. */
+  async createInvitation(ref: string, input: { email: string; role: Role }): Promise<Invitation> {
+    const { invitation } = await this.api<{ invitation: Invitation }>('POST', `/v1/orgs/${ref}/invitations`, input)
+    return invitation
+  }
+  /** Revoke a pending invitation (owner/admin). */
+  async revokeInvitation(ref: string, id: string): Promise<void> {
+    await this.api('DELETE', `/v1/orgs/${ref}/invitations/${id}`)
+  }
+  /** The caller's own pending invitations, matched on their token email claim. */
+  async listMyInvitations(): Promise<Invitation[]> {
+    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', '/v1/invitations')
+    return invitations
+  }
+  /** Accept an invitation addressed to the caller's email → become a member. */
+  async acceptInvitation(id: string): Promise<Membership> {
+    const { member } = await this.api<{ member: Membership }>('POST', `/v1/invitations/${id}/accept`, {})
+    return member
   }
 
   // ── scopes (workspaces / projects / environments) ──────────────────────────

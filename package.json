@@ -18,7 +18,7 @@
     "@baseworks/sdk": "^0.1.2"
   },
   "devDependencies": {
-    "@baseworks/auth": "^0.2.4",
+    "@baseworks/auth": "workspace:*",
     "@baseworks/tsconfig": "workspace:*",
     "@types/node": "^22.20.0",
     "@hono/node-server": "^1.19.14",

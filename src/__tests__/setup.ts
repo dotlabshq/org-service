@@ -32,8 +32,10 @@ export async function bootTestFoldBase(): Promise<TestFoldBase> {
   return { base: es.base, svcToken, stop: es.stop }
 }
 
-export function makeToken(userId = USER_ID): string {
-  return signHs256Jwt({ sub: userId, type: 'human' }, JWT_SECRET, 3600)
+export function makeToken(userId = USER_ID, email?: string): string {
+  // An email claim is optional: a realm may or may not put one in its tokens,
+  // and the invitee-facing endpoints must work either way.
+  return signHs256Jwt({ sub: userId, type: 'human', ...(email ? { email } : {}) }, JWT_SECRET, 3600)
 }
 
 /** Servis token'ı — kullanıcı yüzeyi olmayan uçlar için (ör. /v1/all-orgs). */

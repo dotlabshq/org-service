@@ -1,5 +1,5 @@
 import type { FoldBase } from '@baseworks/foldbase'
-import { OrgEvents, ScopeEvents, MembershipEvents, AppEvents, AppPolicyEvents } from '@baseworks/org/events'
+import { OrgEvents, ScopeEvents, MembershipEvents, InvitationEvents, AppEvents, AppPolicyEvents } from '@baseworks/org/events'
 import type {
   Organization,
   Scope,
@@ -9,6 +9,8 @@ import type {
   OrgRow,
   ScopeRow,
   MemberRow,
+  Invitation,
+  InvitationRow,
   AppRow,
   AppPolicyRow,
   RegisteredApp,
@@ -77,6 +79,16 @@ const toScope = (r: ScopeRow): Scope => ({
   updatedAt: r.updated_at,
 })
 
+const toInvitation = (r: InvitationRow): Invitation => ({
+  id: r.id,
+  organizationId: r.org_id,
+  email: r.email,
+  role: r.role,
+  invitedBy: r.invited_by,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
 const toMember = (r: MemberRow): Membership => ({
   id: r.id,
   organizationId: r.org_id,
@@ -103,6 +115,7 @@ export function createStore(fb: FoldBase) {
   const orgs = fb.catalog(OrgEvents)
   const scopes = fb.catalog(ScopeEvents)
   const members = fb.catalog(MembershipEvents)
+  const invitations = fb.catalog(InvitationEvents)
   const apps = fb.catalog(AppEvents)
   const policies = fb.catalog(AppPolicyEvents)
 
@@ -260,6 +273,111 @@ export function createStore(fb: FoldBase) {
     const row = res.rows[0]
     if (!row) throw new StoreError(404, 'not_found')
     await members.emit(row.id, await version(row.id), 'MemberRemoved', {}, { actor })
+  }
+
+  // ── invitations ────────────────────────────────────────────────────────────
+  //
+  // An invitation is a pending intent, not a membership. Accepting one emits a
+  // MemberAdded on the membership stream and deletes the pending row; the
+  // invitation events stay as the audit trail of who invited whom.
+  //
+  // The email is normalised on the way in. Without that, `Ada@Example.com ` and
+  // `ada@example.com` are two invitations for one person, and only one of them
+  // is ever findable.
+
+  const normaliseEmail = (email: string): string => email.trim().toLowerCase()
+
+  async function listInvitations(orgId: string): Promise<Invitation[]> {
+    const res = await q.query<InvitationRow>('org_invitations', {
+      where: { org_id: { eq: orgId } },
+      sort: ['-created_at'],
+    })
+    return res.rows.map(toInvitation)
+  }
+
+  /**
+   * Invite an email, or re-point an existing pending invitation at a new role.
+   *
+   * Idempotent per (org, email): inviting the same person twice must not create
+   * a second row that the first acceptance leaves behind as a ghost.
+   */
+  async function createInvitation(input: {
+    orgId: string
+    email: string
+    role: Role
+    actor: string
+  }): Promise<Invitation> {
+    const email = normaliseEmail(input.email)
+    const now = Date.now()
+
+    const existing = await q.query<InvitationRow>('org_invitations', {
+      where: { org_id: { eq: input.orgId }, email: { eq: email } },
+      limit: 1,
+    })
+    if (existing.rows[0]) {
+      const row = existing.rows[0]
+      if (row.role === input.role) return toInvitation(row)
+      // Changing the role re-issues rather than editing: the event log should
+      // show both decisions, not silently overwrite the first.
+      await invitations.emit(row.id, await version(row.id), 'InvitationRevoked', {}, { actor: input.actor })
+    }
+
+    const id = InvitationEvents.newId()
+    await invitations.emit(
+      id, 0, 'InvitationCreated',
+      { orgId: input.orgId, email, role: input.role, invitedBy: input.actor, at: now },
+      { actor: input.actor },
+    )
+    return {
+      id, organizationId: input.orgId, email, role: input.role,
+      invitedBy: input.actor, createdAt: now, updatedAt: now,
+    }
+  }
+
+  async function invitationById(id: string): Promise<InvitationRow | null> {
+    const res = await q.query<InvitationRow>('org_invitations', { where: { id: { eq: id } }, limit: 1 })
+    return res.rows[0] ?? null
+  }
+
+  async function revokeInvitation(orgId: string, id: string, actor: string): Promise<void> {
+    const row = await invitationById(id)
+    // Scoped to the org in the path: an id alone must not let an admin of one
+    // org revoke another org's invitation.
+    if (!row || row.org_id !== orgId) throw new StoreError(404, 'not_found')
+    await invitations.emit(id, await version(id), 'InvitationRevoked', {}, { actor })
+  }
+
+  /** Pending invitations addressed to an email, enriched with the org's name. */
+  async function listInvitationsForEmail(email: string): Promise<Invitation[]> {
+    const res = await q.query<InvitationRow>('org_invitations', {
+      where: { email: { eq: normaliseEmail(email) } },
+      sort: ['-created_at'],
+    })
+    return Promise.all(res.rows.map(async (row) => {
+      const org = await orgById(row.org_id)
+      return {
+        ...toInvitation(row),
+        ...(org ? { orgSlug: org.slug, orgName: org.name } : {}),
+      }
+    }))
+  }
+
+  /**
+   * Accept an invitation and become a member.
+   *
+   * The caller must prove the invitation is theirs by presenting the email it
+   * was addressed to — the id alone is not enough, or anyone who saw an id in a
+   * log could join the org.
+   */
+  async function acceptInvitation(id: string, userId: string, email: string): Promise<Membership> {
+    const row = await invitationById(id)
+    if (!row || row.email !== normaliseEmail(email)) throw new StoreError(404, 'not_found')
+
+    const member = await addMember({ orgId: row.org_id, userId, role: row.role, actor: userId })
+    // Only after the membership is written: if this crashed first, the invitee
+    // would be left with neither a membership nor an invitation to retry.
+    await invitations.emit(id, await version(id), 'InvitationAccepted', { userId, at: Date.now() }, { actor: userId })
+    return member
   }
 
   // ── scopes ─────────────────────────────────────────────────────────────────
@@ -477,6 +595,8 @@ export function createStore(fb: FoldBase) {
     orgRowByRef, listOrgsForUser, listAllOrgs, createOrg, getOrg, updateOrg, setOrgMetadata, archiveOrg,
     // members
     roleOf, listMembers, addMember, removeMember,
+    // invitations
+    listInvitations, createInvitation, revokeInvitation, listInvitationsForEmail, acceptInvitation,
     // scopes
     listScopes, scopeByRef, createScope, updateScope, archiveScope, provisionDefaults,
     // PDP

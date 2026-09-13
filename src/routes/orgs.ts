@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { requireAuth } from '../lib/auth.js'
 import { StoreError, type Store } from '../store.js'
 import { Role } from '@baseworks/org/events'
+import { callerEmail, EmailUnavailable, StoreNotFound } from '../lib/caller-email.js'
 
 const slug = z.string().min(1).regex(/^[a-z0-9-]+$/)
 
@@ -168,6 +169,73 @@ export function orgsRouter(store: Store) {
     const { orgId } = await orgForMembershipWrite(c, auth)
     await store.removeMember(orgId, c.req.param('userId'), auth.userId).catch(fail)
     return c.json({ ok: true })
+  })
+
+  // ── invitations ─────────────────────────────────────────────────────────────
+  //
+  // An invitation is a pending intent addressed to an email. Accepting one
+  // writes the membership; the invitation events remain the record of who
+  // invited whom.
+
+  /** The caller's email, or a 409 that says why it could not be determined. */
+  async function emailOf(c: { req: { header: (k: string) => string | undefined } }, auth: { userId: string; email?: string }): Promise<string> {
+    const bearer = (c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    try {
+      return await callerEmail(auth, bearer)
+    } catch (err) {
+      if (err instanceof EmailUnavailable) throw new StoreError(409, 'email_unavailable', err.message)
+      if (err instanceof StoreNotFound) throw new StoreError(409, 'no_email', err.message)
+      throw err
+    }
+  }
+
+  app.get('/orgs/:ref/invitations', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    return c.json({ invitations: await store.listInvitations(orgId) })
+  })
+
+  app.post(
+    '/orgs/:ref/invitations',
+    zValidator('json', z.object({ email: z.string().min(3).includes('@'), role: Role })),
+    async (c) => {
+      const auth = c.get('auth')
+      const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+      const input = c.req.valid('json')
+      const invitation = await store
+        .createInvitation({ orgId, email: input.email, role: input.role, actor: auth.userId })
+        .catch(fail)
+      return c.json({ invitation }, 201)
+    },
+  )
+
+  app.delete('/orgs/:ref/invitations/:id', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    await store.revokeInvitation(orgId, c.req.param('id'), auth.userId).catch(fail)
+    return c.json({ ok: true })
+  })
+
+  /** The caller's own pending invitations, across every org. */
+  app.get('/invitations', async (c) => {
+    const auth = c.get('auth')
+    const email = await emailOf(c, auth)
+    return c.json({ invitations: await store.listInvitationsForEmail(email) })
+  })
+
+  /**
+   * Accept an invitation.
+   *
+   * The id is checked against the caller's own email, so an id seen in a log or
+   * a screenshot is not enough to join an org — the invitation has to have been
+   * addressed to you. A mismatch answers 404 rather than 403, which would
+   * confirm the id is real.
+   */
+  app.post('/invitations/:id/accept', async (c) => {
+    const auth = c.get('auth')
+    const email = await emailOf(c, auth)
+    const member = await store.acceptInvitation(c.req.param('id'), auth.userId, email).catch(fail)
+    return c.json({ member }, 201)
   })
 
   return app

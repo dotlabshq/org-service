@@ -66,6 +66,28 @@ await org.registerApp({
 })
 ```
 
+### Inviting someone
+
+```ts
+await org.createInvitation('acme', { email: 'ada@example.com', role: 'member' })
+const pending = await org.listInvitations('acme')          // owner/admin
+```
+
+The invitee, signed in as themselves:
+
+```ts
+const mine = await org.listMyInvitations()                 // enriched with orgSlug/orgName
+await org.acceptInvitation(mine[0].id)                     // → Membership
+```
+
+Inviting is idempotent per email: inviting the same person twice leaves one
+pending invitation, and inviting them at a different role re-issues rather than
+editing, so the event log shows both decisions.
+
+Acceptance is checked against the caller's own email, so an id seen in a log or
+a forwarded message is not enough to join an organisation. A mismatch answers
+`404`, not `403`, which would confirm the id is real.
+
 ### Acting as a service
 
 A service that must add or remove members does so **as itself**, after being
@@ -147,14 +169,14 @@ customer list.
 
 ## Known gaps
 
-- **Invitations are half-built.** `@baseworks/org` defines the events, the
-  projection and client methods for `/invitations`, but this service has **no
-  routes for them** — a caller reaching for that surface gets 404. The read
-  model is registered and stays empty. Either the routes were never written or
-  they were lost; the client half survived because it was published to npm and
-  the service ships as an image. Consumers currently keep their own invite
-  table, which is why the manifest does not advertise an `invitations`
-  capability.
+- **Invitee endpoints need the caller's email.** A realm token deliberately
+  carries none, so `GET /invitations` and accepting resolve it from
+  iam-service (`IAM_SERVICE_URL`), or from an `email` claim if this realm's
+  tokens have one. With neither, those two endpoints answer `409
+  email_unavailable` rather than an empty list — "you have no invitations" would
+  be a lie when the truth is "this service cannot tell".
+- **No expiry on invitations.** A pending invitation stays valid until it is
+  accepted or revoked.
 - **No pagination.** `listOrgs`, `listMembers` and `/all-orgs` return
   everything. Fine at current sizes, not forever.
 - **Last-owner protection is not enforced.** Nothing stops the final `owner`

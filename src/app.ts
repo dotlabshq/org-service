@@ -46,11 +46,9 @@ export function createApp(fb: FoldBase): Hono {
         capabilities: [
           'orgs',
           'members',
+          'invitations',
           'scopes',
           'pdp',
-          // Deliberately absent: `invitations`. The client package defines the
-          // surface but this service has no routes for it, so a consumer must
-          // not branch as though it were there.
         ],
       }),
     ),

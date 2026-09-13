@@ -30,6 +30,7 @@ tags:
     description: Unauthenticated
   - name: orgs
   - name: members
+  - name: invitations
   - name: scopes
     description: Workspaces, projects and environments under an organisation
   - name: pdp
@@ -274,6 +275,123 @@ paths:
         "200": { description: ok }
         "403": { description: Not permitted }
 
+  /orgs/{ref}/invitations:
+    parameters:
+      - { name: ref, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [invitations]
+      summary: Pending invitations for an organisation
+      description: Owner or admin.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invitation" }
+        "403": { description: Not an owner or admin }
+    post:
+      tags: [invitations]
+      summary: Invite an email address
+      description: |
+        Owner or admin. Idempotent per (organisation, email): inviting the same
+        person twice leaves one pending invitation. Inviting them at a different
+        role re-issues rather than editing, so the event log shows both
+        decisions. The email is normalised, or `Ada@Example.com ` and
+        `ada@example.com` would be two invitations for one person and only one of
+        them ever findable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitation: { $ref: "#/components/schemas/Invitation" }
+        "400": { description: Not an email address }
+        "403": { description: Not an owner or admin }
+
+  /orgs/{ref}/invitations/{id}:
+    parameters:
+      - { name: ref, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [invitations]
+      summary: Revoke a pending invitation
+      description: |
+        Owner or admin. Scoped to the organisation in the path: an id alone does
+        not let an admin of one organisation revoke another's invitation.
+      responses:
+        "200": { description: ok }
+        "404": { description: Not found in this organisation }
+
+  /invitations:
+    get:
+      tags: [invitations]
+      summary: The caller's own pending invitations
+      description: |
+        Enriched with `orgSlug` and `orgName` so a console can say which
+        organisation each is for without a second lookup.
+
+        Needs the caller's email, which a realm token deliberately does not
+        carry. It is resolved from iam-service, or from an `email` claim if this
+        realm's tokens have one. With neither the answer is `409`, not an empty
+        list: "you have no invitations" would be a lie when the truth is "this
+        service cannot tell".
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invitation" }
+        "409": { description: email_unavailable, or no_email }
+
+  /invitations/{id}/accept:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [invitations]
+      summary: Accept an invitation and become a member
+      description: |
+        Checked against the caller's own email, so an id seen in a log, a
+        screenshot or a forwarded message is not enough to join. A mismatch
+        answers `404` rather than `403`, which would confirm the id is real.
+
+        The membership is written first; only then is the invitation marked
+        accepted. The other order would leave an invitee with neither a
+        membership nor an invitation to retry.
+      responses:
+        "201":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  member: { $ref: "#/components/schemas/Membership" }
+        "404": { description: No such invitation for this caller }
+        "409": { description: email_unavailable, or no_email }
+
   /orgs/{orgRef}/workspaces:
     parameters:
       - { name: orgRef, in: path, required: true, schema: { type: string } }
@@ -489,6 +607,20 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         createdAt: { type: integer }
         metadata: { type: object, additionalProperties: true }
+
+    Invitation:
+      type: object
+      required: [id, organizationId, email, role, invitedBy]
+      properties:
+        id: { type: string }
+        organizationId: { type: string }
+        email: { type: string, description: Normalised — trimmed and lowercased }
+        role: { $ref: "#/components/schemas/Role" }
+        invitedBy: { type: string }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        orgSlug: { type: string, description: Only on the invitee-facing list }
+        orgName: { type: string, description: Only on the invitee-facing list }
 
     Membership:
       type: object

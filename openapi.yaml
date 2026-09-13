@@ -10,6 +10,10 @@ info:
     `https://<host>/v1/org/orgs` in public. The old `/v1/orgs` paths are still
     served for callers that predate the gateway; they will be removed.
 
+    **Field names are `snake_case`** (ADR-043), request and response alike, and
+    identical to the underlying row names — so a field added to a projection
+    reaches the body without a serializer having to be remembered.
+
     **Identity comes from the realm's token, roles come from here.** A token
     carries `sub` and `type` and no organisation or role — membership changes
     while a token lives, so a token carrying a role would go stale and lie. Ask
@@ -247,9 +251,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [userId, role]
+              required: [user_id, role]
               properties:
-                userId: { type: string }
+                user_id: { type: string }
                 role: { $ref: "#/components/schemas/Role" }
       responses:
         "201":
@@ -598,37 +602,41 @@ components:
 
     Org:
       type: object
-      required: [id, shortId, slug, name]
+      required: [id, short_id, slug, name]
       properties:
         id: { type: string }
-        shortId: { type: string, description: Short, human-quotable }
+        short_id: { type: string, description: Short, human-quotable }
         slug: { type: string, description: Permanent once set }
         name: { type: string }
         role: { $ref: "#/components/schemas/Role" }
-        createdAt: { type: integer }
+        created_at: { type: integer }
+        updated_at: { type: integer }
         metadata: { type: object, additionalProperties: true }
 
     Invitation:
       type: object
-      required: [id, organizationId, email, role, invitedBy]
+      required: [id, org_id, email, role, invited_by]
       properties:
         id: { type: string }
-        organizationId: { type: string }
+        org_id: { type: string }
         email: { type: string, description: Normalised — trimmed and lowercased }
         role: { $ref: "#/components/schemas/Role" }
-        invitedBy: { type: string }
-        createdAt: { type: integer }
-        updatedAt: { type: integer }
-        orgSlug: { type: string, description: Only on the invitee-facing list }
-        orgName: { type: string, description: Only on the invitee-facing list }
+        invited_by: { type: string }
+        created_at: { type: integer }
+        updated_at: { type: integer }
+        org_slug: { type: string, description: Only on the invitee-facing list }
+        org_name: { type: string, description: Only on the invitee-facing list }
 
     Membership:
       type: object
-      required: [userId, role]
+      required: [user_id, role]
       properties:
-        userId: { type: string }
+        id: { type: string }
+        org_id: { type: string }
+        user_id: { type: string }
         role: { $ref: "#/components/schemas/Role" }
-        createdAt: { type: integer }
+        created_at: { type: integer }
+        updated_at: { type: integer }
 
     ServiceManifest:
       type: object

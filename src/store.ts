@@ -56,47 +56,19 @@ export class StoreError extends Error {
   }
 }
 
-const toOrg = (r: OrgRow): Organization => ({
-  id: r.id,
-  shortId: r.short_id,
-  slug: r.slug,
-  name: r.name,
-  metadata: parseMeta(r.metadata),
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
+// Bodies use the same names as the rows (ADR-043), so these no longer rename
+// anything. What is left is the work that is genuinely storage-shaped: metadata
+// arrives as a JSON string, and `is_default` as whatever the driver gives back.
+// A field added to a projection now reaches the body on its own instead of
+// waiting to be remembered here.
 
-const toScope = (r: ScopeRow): Scope => ({
-  id: r.id,
-  organizationId: r.org_id,
-  parentId: r.parent_id,
-  kind: r.kind,
-  shortId: r.short_id,
-  slug: r.slug,
-  name: r.name,
-  isDefault: !!r.is_default,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
+const toOrg = (r: OrgRow): Organization => ({ ...r, metadata: parseMeta(r.metadata) })
 
-const toInvitation = (r: InvitationRow): Invitation => ({
-  id: r.id,
-  organizationId: r.org_id,
-  email: r.email,
-  role: r.role,
-  invitedBy: r.invited_by,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
+const toScope = (r: ScopeRow): Scope => ({ ...r, is_default: !!r.is_default })
 
-const toMember = (r: MemberRow): Membership => ({
-  id: r.id,
-  organizationId: r.org_id,
-  userId: r.user_id,
-  role: r.role,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-})
+const toInvitation = (r: InvitationRow): Invitation => ({ ...r })
+
+const toMember = (r: MemberRow): Membership => ({ ...r })
 
 function parseMeta(s: string | null | undefined): Record<string, unknown> {
   if (!s) return {}
@@ -265,7 +237,7 @@ export function createStore(fb: FoldBase) {
     }
     const id = MembershipEvents.newId()
     await members.emit(id, 0, 'MemberAdded', { orgId: input.orgId, userId: input.userId, role: input.role, at: now }, { actor: input.actor })
-    return { id, organizationId: input.orgId, userId: input.userId, role: input.role, createdAt: now, updatedAt: now }
+    return { id, org_id: input.orgId, user_id: input.userId, role: input.role, created_at: now, updated_at: now }
   }
 
   async function removeMember(orgId: string, userId: string, actor: string): Promise<void> {
@@ -329,8 +301,8 @@ export function createStore(fb: FoldBase) {
       { actor: input.actor },
     )
     return {
-      id, organizationId: input.orgId, email, role: input.role,
-      invitedBy: input.actor, createdAt: now, updatedAt: now,
+      id, org_id: input.orgId, email, role: input.role,
+      invited_by: input.actor, created_at: now, updated_at: now,
     }
   }
 
@@ -357,7 +329,7 @@ export function createStore(fb: FoldBase) {
       const org = await orgById(row.org_id)
       return {
         ...toInvitation(row),
-        ...(org ? { orgSlug: org.slug, orgName: org.name } : {}),
+        ...(org ? { org_slug: org.slug, org_name: org.name } : {}),
       }
     }))
   }
@@ -432,8 +404,9 @@ export function createStore(fb: FoldBase) {
       at: now,
     }, { actor: input.actor })
     const created: Scope = {
-      id, organizationId: input.orgId, parentId: input.parentId, kind: input.kind,
-      shortId: '', slug, name: input.name, isDefault: input.isDefault ?? false, createdAt: now, updatedAt: now,
+      id, org_id: input.orgId, parent_id: input.parentId, kind: input.kind,
+      short_id: '', slug, name: input.name, is_default: input.isDefault ?? false,
+      created_at: now, updated_at: now,
     }
     // Chain the default child (workspace→project→environment) when provisioning.
     if (input.provision) {

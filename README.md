@@ -97,7 +97,7 @@ named in `ORG_MEMBERSHIP_WRITERS`:
 curl -sX POST https://example.com/v1/org/orgs/acme/members \
   -H "authorization: Bearer $SERVICE_TOKEN" \
   -H 'content-type: application/json' \
-  -d '{"userId":"usr_1","role":"member"}'
+  -d '{"user_id":"usr_1","role":"member"}'
 ```
 
 If you find yourself wanting to act *as a user* — minting a token with their
@@ -130,6 +130,19 @@ $ mycli use acme
 
 The active scope is stored client-side and sent per request. It selects, it does
 not grant: this service checks membership every time.
+
+## Field naming
+
+Bodies are `snake_case` (ADR-043), request and response alike: `short_id`,
+`user_id`, `created_at`. They match the underlying row names exactly, so the
+serializers no longer rename anything and a field added to a projection reaches
+the body on its own rather than waiting to be remembered.
+
+TypeScript variables stay camelCase — this is a contract decision, not a code
+style one.
+
+**This changed in `@baseworks/org` 1.0.0.** A consumer on 0.x reads `shortId`
+and `organizationId`; both are gone.
 
 ## Configuration
 

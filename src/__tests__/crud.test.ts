@@ -13,7 +13,7 @@ beforeEach(async () => { app = await makeTestApp(fb) })
 
 async function createOrg(name = 'Acme', slug = 'acme', token?: string) {
   const res = await app.post('/v1/orgs', { name, slug }, token)
-  return json<{ org: { id: string; shortId: string; slug: string; name: string; metadata: Record<string, unknown> } }>(res)
+  return json<{ org: { id: string; short_id: string; slug: string; name: string; metadata: Record<string, unknown> } }>(res)
 }
 
 // ── orgs ────────────────────────────────────────────────────────────────────
@@ -32,14 +32,14 @@ describe('orgs', () => {
   it('creates an org and auto-provisions the default ws/proj/env chain', async () => {
     const res = await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' })
     expect(res.status).toBe(201)
-    const { org } = await json<{ org: { slug: string; name: string; shortId: string } }>(res)
+    const { org } = await json<{ org: { slug: string; name: string; short_id: string } }>(res)
     expect(org.slug).toBe('acme')
-    expect(org.shortId).toBeTruthy()
+    expect(org.short_id).toBeTruthy()
 
     const list = await json<{ orgs: unknown[] }>(await app.get('/v1/orgs'))
     expect(list.orgs).toHaveLength(1)
 
-    const ws = await json<{ workspaces: Array<{ slug: string; isDefault: boolean }> }>(await app.get('/v1/orgs/acme/workspaces'))
+    const ws = await json<{ workspaces: Array<{ slug: string; is_default: boolean }> }>(await app.get('/v1/orgs/acme/workspaces'))
     expect(ws.workspaces.map((w) => w.slug)).toContain('default')
     const proj = await json<{ projects: Array<{ slug: string }> }>(await app.get('/v1/orgs/acme/workspaces/default/projects'))
     expect(proj.projects.map((p) => p.slug)).toContain('main')
@@ -49,9 +49,9 @@ describe('orgs', () => {
 
   it('makes the creator an owner', async () => {
     await createOrg()
-    const { members } = await json<{ members: Array<{ userId: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))
+    const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))
     expect(members).toHaveLength(1)
-    expect(members[0]).toMatchObject({ userId: USER_ID, role: 'owner' })
+    expect(members[0]).toMatchObject({ user_id: USER_ID, role: 'owner' })
   })
 
   it('auto-generates a slug when omitted', async () => {
@@ -65,10 +65,10 @@ describe('orgs', () => {
     expect((await app.post('/v1/orgs', { name: 'Other', slug: 'acme' })).status).toBe(409)
   })
 
-  it('resolves by slug and by shortId', async () => {
+  it('resolves by slug and by short_id', async () => {
     const { org } = await createOrg()
     expect((await json<{ org: { id: string } }>(await app.get('/v1/orgs/acme'))).org.id).toBe(org.id)
-    expect((await json<{ org: { id: string } }>(await app.get(`/v1/orgs/${org.shortId}`))).org.id).toBe(org.id)
+    expect((await json<{ org: { id: string } }>(await app.get(`/v1/orgs/${org.short_id}`))).org.id).toBe(org.id)
     // id de bir ref'tir: kimliği tutan çağıran slug'ı ayrıca taşımak zorunda değil.
     expect((await json<{ org: { id: string } }>(await app.get(`/v1/orgs/${org.id}`))).org.id).toBe(org.id)
   })
@@ -124,24 +124,24 @@ describe('org metadata', () => {
 describe('memberships', () => {
   it('adds, changes role, and removes a member', async () => {
     await createOrg()
-    expect((await app.post('/v1/orgs/acme/members', { userId: 'u2', role: 'member' })).status).toBe(201)
-    let members = (await json<{ members: Array<{ userId: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
-    expect(members.find((m) => m.userId === 'u2')?.role).toBe('member')
+    expect((await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'member' })).status).toBe(201)
+    let members = (await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
+    expect(members.find((m) => m.user_id === 'u2')?.role).toBe('member')
 
-    await app.post('/v1/orgs/acme/members', { userId: 'u2', role: 'admin' })
-    members = (await json<{ members: Array<{ userId: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
-    expect(members.find((m) => m.userId === 'u2')?.role).toBe('admin')
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'admin' })
+    members = (await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
+    expect(members.find((m) => m.user_id === 'u2')?.role).toBe('admin')
 
     expect((await app.del('/v1/orgs/acme/members/u2')).status).toBe(200)
-    members = (await json<{ members: Array<{ userId: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
-    expect(members.find((m) => m.userId === 'u2')).toBeUndefined()
+    members = (await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))).members
+    expect(members.find((m) => m.user_id === 'u2')).toBeUndefined()
   })
 
   it('a viewer cannot add members (403)', async () => {
     await createOrg()
-    await app.post('/v1/orgs/acme/members', { userId: 'viewer1', role: 'viewer' })
+    await app.post('/v1/orgs/acme/members', { user_id: 'viewer1', role: 'viewer' })
     const viewerTok = makeToken('viewer1')
-    expect((await app.post('/v1/orgs/acme/members', { userId: 'u3', role: 'member' }, viewerTok)).status).toBe(403)
+    expect((await app.post('/v1/orgs/acme/members', { user_id: 'u3', role: 'member' }, viewerTok)).status).toBe(403)
   })
 })
 
@@ -172,11 +172,11 @@ describe('scopes (workspace / project / environment)', () => {
     expect(envs.envs.map((e) => e.slug)).toContain('staging')
   })
 
-  it('resolves a scope by shortId', async () => {
-    const { workspace } = await json<{ workspace: { shortId: string; slug: string } }>(
+  it('resolves a scope by short_id', async () => {
+    const { workspace } = await json<{ workspace: { short_id: string; slug: string } }>(
       await app.post('/v1/orgs/acme/workspaces', { name: 'Staging', slug: 'staging' }),
     )
-    const got = await json<{ workspace: { slug: string } }>(await app.get(`/v1/orgs/acme/workspaces/${workspace.shortId}`))
+    const got = await json<{ workspace: { slug: string } }>(await app.get(`/v1/orgs/acme/workspaces/${workspace.short_id}`))
     expect(got.workspace.slug).toBe('staging')
   })
 
@@ -195,7 +195,7 @@ describe('scopes (workspace / project / environment)', () => {
   })
 
   it('a viewer cannot create a workspace (403)', async () => {
-    await app.post('/v1/orgs/acme/members', { userId: 'v1', role: 'viewer' })
+    await app.post('/v1/orgs/acme/members', { user_id: 'v1', role: 'viewer' })
     const viewer = makeToken('v1')
     expect((await app.post('/v1/orgs/acme/workspaces', { name: 'X', slug: 'x' }, viewer)).status).toBe(403)
   })
@@ -295,7 +295,7 @@ describe('service tokens and membership', () => {
 
   it('refuses by default, even for a service token', async () => {
     await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
-    const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+    const res = await app.post('/v1/orgs/acme/members', { user_id: 'usr_new', role: 'member' }, writer())
     expect(res.status).toBe(403)
   })
 
@@ -303,13 +303,13 @@ describe('service tokens and membership', () => {
     await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
     process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
     try {
-      const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      const res = await app.post('/v1/orgs/acme/members', { user_id: 'usr_new', role: 'member' }, writer())
       expect(res.status).toBe(201)
 
-      const { members } = await json<{ members: Array<{ userId: string; role: string }> }>(
+      const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(
         await app.get('/v1/orgs/acme/members'),
       )
-      expect(members.map((m) => m.userId)).toContain('usr_new')
+      expect(members.map((m) => m.user_id)).toContain('usr_new')
     } finally {
       delete process.env['ORG_MEMBERSHIP_WRITERS']
     }
@@ -319,7 +319,7 @@ describe('service tokens and membership', () => {
     await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
     process.env['ORG_MEMBERSHIP_WRITERS'] = 'billing'
     try {
-      const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      const res = await app.post('/v1/orgs/acme/members', { user_id: 'usr_new', role: 'member' }, writer())
       expect(res.status).toBe(403)
     } finally {
       delete process.env['ORG_MEMBERSHIP_WRITERS']
@@ -330,7 +330,7 @@ describe('service tokens and membership', () => {
     await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
     process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
     try {
-      await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      await app.post('/v1/orgs/acme/members', { user_id: 'usr_new', role: 'member' }, writer())
       expect((await app.del('/v1/orgs/acme/members/usr_new', writer())).status).toBe(200)
     } finally {
       delete process.env['ORG_MEMBERSHIP_WRITERS']
@@ -340,7 +340,7 @@ describe('service tokens and membership', () => {
   it('still refuses an unknown org with 404, not 403', async () => {
     process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
     try {
-      const res = await app.post('/v1/orgs/nope/members', { userId: 'usr_new', role: 'member' }, writer())
+      const res = await app.post('/v1/orgs/nope/members', { user_id: 'usr_new', role: 'member' }, writer())
       expect(res.status).toBe(404)
     } finally {
       delete process.env['ORG_MEMBERSHIP_WRITERS']

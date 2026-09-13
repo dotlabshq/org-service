@@ -13,22 +13,22 @@ const BASE     = `/v1/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects`
 
 const PROJ = {
   id:        '019f07cc-3333-7db6-956d-f323dfadba50',
-  shortId:   'pj9abc',
+  short_id:   'pj9abc',
   slug:      'api',
   name:      'API',
-  isDefault: true,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: true,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 const PROJ2 = {
   id:        '019f07cd-4444-7db6-956d-f323dfadba50',
-  shortId:   'pjxyz1',
+  short_id:   'pjxyz1',
   slug:      'web',
   name:      'Web',
-  isDefault: false,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: false,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 // ── list ─────────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ describe('flect proj (list)', () => {
     const r = await run(['proj', '-o', 'json', ...OPT])
     const parsed = JSON.parse(r.stdout)
     expect(Array.isArray(parsed)).toBe(true)
-    expect(parsed[0].shortId).toBe('pj9abc')
+    expect(parsed[0].short_id).toBe('pj9abc')
   })
 })
 
@@ -86,7 +86,7 @@ describe('flect proj create', () => {
     expect((captured.body as Record<string, unknown>).slug).toBe('api')
   })
 
-  it('shows shortId in output, not full UUID', async () => {
+  it('shows short_id in output, not full UUID', async () => {
     mocks.mockPost(BASE, { project: PROJ })
     const r = await run(['proj', 'create', '--name', 'API', ...OPT])
     expect(r.stdout).toContain('pj9abc')
@@ -104,14 +104,14 @@ describe('flect proj get', () => {
     expect(r.stdout).toContain('API')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockGet(`${BASE}/pj9abc`, { project: PROJ })
     const r = await run(['proj', 'get', 'pj9abc', ...OPT])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('API')
   })
 
-  it('id field shows shortId, full_id field shows UUID', async () => {
+  it('id field shows short_id, full_id field shows UUID', async () => {
     mocks.mockGet(`${BASE}/api`, { project: PROJ })
     const r = await run(['proj', 'get', 'api', ...OPT])
     const lines  = r.stdout.split('\n')
@@ -131,7 +131,7 @@ describe('flect proj update', () => {
     expect((captured.body as Record<string, unknown>).name).toBe('API v2')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     const captured = mocks.mockPatchCapture(`${BASE}/pj9abc`, { project: { ...PROJ, name: 'API v2' } })
     const r = await run(['proj', 'update', 'pj9abc', '--name', 'API v2', ...OPT])
     expect(r.exitCode).toBe(0)
@@ -149,7 +149,7 @@ describe('flect proj delete', () => {
     expect(r.stdout).toContain('api')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockDelete(`${BASE}/pj9abc`)
     const r = await run(['proj', 'delete', 'pj9abc', ...OPT])
     expect(r.exitCode).toBe(0)

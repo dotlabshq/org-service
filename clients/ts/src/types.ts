@@ -70,25 +70,27 @@ export interface AppPolicyRow {
 
 export interface Organization {
   id: string
-  shortId: string
+  short_id: string
   slug: string
   name: string
   metadata: Record<string, unknown>
-  createdAt: number
-  updatedAt: number
+  created_at: number
+  updated_at: number
+  /** The caller's own role; present on listings, absent on a plain read. */
+  role?: Role
 }
 
 export interface Scope {
   id: string
-  organizationId: string
-  parentId: string
+  org_id: string
+  parent_id: string
   kind: ScopeKind
-  shortId: string
+  short_id: string
   slug: string
   name: string
-  isDefault: boolean
-  createdAt: number
-  updatedAt: number
+  is_default: boolean
+  created_at: number
+  updated_at: number
 }
 
 // Backwards-friendly aliases — a scope of each kind is still a Workspace /
@@ -99,25 +101,25 @@ export type Environment = Scope
 
 export interface Membership {
   id: string
-  organizationId: string
-  userId: string
+  org_id: string
+  user_id: string
   role: Role
-  createdAt: number
-  updatedAt: number
+  created_at: number
+  updated_at: number
 }
 
 export interface Invitation {
   id: string
-  organizationId: string
+  org_id: string
   email: string
   role: Role
-  invitedBy: string
-  createdAt: number
-  updatedAt: number
-  // Enriched on the invitee-facing list (`GET /v1/invitations`) so the CLI can
+  invited_by: string
+  created_at: number
+  updated_at: number
+  // Enriched on the invitee-facing list (`GET /invitations`) so a client can
   // show which org an invite is for without a second lookup.
-  orgSlug?: string
-  orgName?: string
+  org_slug?: string
+  org_name?: string
 }
 
 // ── PDP (app registry + access decisions) ─────────────────────────────────────

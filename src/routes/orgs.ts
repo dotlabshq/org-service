@@ -156,11 +156,11 @@ export function orgsRouter(store: Store) {
     return requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
   }
 
-  app.post('/orgs/:ref/members', zValidator('json', z.object({ userId: z.string().min(1), role: Role })), async (c) => {
+  app.post('/orgs/:ref/members', zValidator('json', z.object({ user_id: z.string().min(1), role: Role })), async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgForMembershipWrite(c, auth)
     const input = c.req.valid('json')
-    const member = await store.addMember({ orgId, userId: input.userId, role: input.role, actor: auth.userId }).catch(fail)
+    const member = await store.addMember({ orgId, userId: input.user_id, role: input.role, actor: auth.userId }).catch(fail)
     return c.json({ member }, 201)
   })
 

@@ -16,13 +16,13 @@ export interface OrgCliDeps {
   cliName?: string;
 }
 
-type OrgRow  = { id: string; shortId: string; slug: string; name: string; createdAt?: number };
+type OrgRow  = { id: string; short_id: string; slug: string; name: string; created_at?: number };
 type OrgMeta = OrgRow & { metadata?: Record<string, unknown> };
-type WsRow   = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
-type ProjRow = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
-type EnvRow  = { id: string; shortId: string; slug: string; name: string; isDefault?: boolean };
-type Membership = { id: string; organizationId: string; userId: string; role: string; createdAt: number; updatedAt: number };
-type Invitation = { id: string; organizationId: string; email: string; role: string; invitedBy: string; createdAt: number; updatedAt: number; orgSlug?: string; orgName?: string };
+type WsRow   = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
+type ProjRow = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
+type EnvRow  = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
+type Membership = { id: string; org_id: string; user_id: string; role: string; created_at: number; updated_at: number };
+type Invitation = { id: string; org_id: string; email: string; role: string; invited_by: string; created_at: number; updated_at: number; org_slug?: string; org_name?: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,10 +81,10 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     const res = await http.get<{ orgs: OrgMeta[] }>('/v1/orgs').catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.orgs, opts.output, (wide) => {
       table(res.orgs, [
-        { key: 'shortId', label: 'ID' },
+        { key: 'short_id', label: 'ID' },
         { key: 'slug',    label: 'SLUG' },
         { key: 'name',    label: 'NAME' },
-        { key: 'createdAt', label: 'CREATED', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'created_at', label: 'CREATED', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',      label: 'FULL ID',  wide: true },
       ] as ColDef<OrgMeta>[], { wide, emptyHint: `No orgs yet.  Run: ${cli} org create --name <n>` });
       summary(`${res.orgs.length} org${res.orgs.length !== 1 ? 's' : ''}`);
@@ -114,7 +114,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .action(async (opts: { name: string; slug?: string }) => {
         const res = await http.post<{ org: OrgRow }>('/v1/orgs', { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Org created: ${res.org.slug}`);
-        kv([['id', res.org.shortId], ['slug', res.org.slug]]);
+        kv([['id', res.org.short_id], ['slug', res.org.slug]]);
       }),
   );
 
@@ -126,7 +126,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         const res  = await http.get<{ org: OrgMeta }>(`/v1/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
         const meta = res.org.metadata ?? {};
         printOutput(res.org as unknown as Record<string, unknown>, opts.output, () => {
-          kv([['id', res.org.shortId], ['slug', res.org.slug], ['name', res.org.name], ['full_id', res.org.id]]);
+          kv([['id', res.org.short_id], ['slug', res.org.slug], ['name', res.org.name], ['full_id', res.org.id]]);
           if (Object.keys(meta).length) {
             console.log(`  ${clr.dim}── metadata ──${clr.reset}`);
             kv(Object.entries(meta).map(([k, v]) => [k, JSON.stringify(v)] as [string, string]));
@@ -147,7 +147,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         if (opts.slug) body['slug'] = opts.slug;
         const res = await http.patch<{ org: OrgRow }>(`/v1/orgs/${slug}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Org updated.');
-        kv([['id', res.org.shortId], ['slug', res.org.slug], ['name', res.org.name]]);
+        kv([['id', res.org.short_id], ['slug', res.org.slug], ['name', res.org.name]]);
       }),
   );
 
@@ -212,13 +212,13 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     const res     = await http.get<{ members: Membership[] }>(`/v1/orgs/${orgSlug}/members`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.members, opts.output, (wide) => {
       table(res.members, [
-        { key: 'userId',    label: 'USER ID' },
+        { key: 'user_id',   label: 'USER ID' },
         { key: 'role',      label: 'ROLE' },
-        { key: 'createdAt', label: 'JOINED', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'created_at', label: 'JOINED', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'FULL ID', wide: true },
       ] as ColDef<Membership>[], { wide, emptyHint: `No members yet.` } as TableOpts & { wide: boolean });
       summary(`${res.members.length} member${res.members.length !== 1 ? 's' : ''}`);
-    }, 'userId');
+    }, 'user_id');
   };
 
   const members = new Command('members')
@@ -244,7 +244,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (userId: string, opts: { role: string; org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.post(`/v1/orgs/${orgSlug}/members`, { userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
+        await http.post(`/v1/orgs/${orgSlug}/members`, { user_id: userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Member added: ${userId} (${opts.role})`);
       }),
   );
@@ -287,8 +287,8 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       table(res.invitations, [
         { key: 'email',     label: 'EMAIL' },
         { key: 'role',      label: 'ROLE' },
-        { key: 'invitedBy', label: 'INVITED BY', wide: true },
-        { key: 'createdAt', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'invited_by', label: 'INVITED BY', wide: true },
+        { key: 'created_at', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'ID' },
       ] as ColDef<Invitation>[], { wide, emptyHint: `No pending invitations.  Run: ${cli} org invite <email>` } as TableOpts & { wide: boolean });
       summary(`${res.invitations.length} pending invitation${res.invitations.length !== 1 ? 's' : ''}`);
@@ -340,8 +340,8 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
         { key: 'orgName',   label: 'ORG' },
         { key: 'orgSlug',   label: 'SLUG' },
         { key: 'role',      label: 'ROLE' },
-        { key: 'invitedBy', label: 'INVITED BY', wide: true },
-        { key: 'createdAt', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
+        { key: 'invited_by', label: 'INVITED BY', wide: true },
+        { key: 'created_at', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'ID' },
       ] as ColDef<Invitation>[], { wide, emptyHint: `No invitations for you.` } as TableOpts & { wide: boolean });
       summary(`${res.invitations.length} invitation${res.invitations.length !== 1 ? 's' : ''} — accept with: ${cli} invites accept <id>`);
@@ -367,7 +367,7 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
       .action(async (id: string) => {
         const res = await http.post<{ member: Membership }>(`/v1/invitations/${id}/accept`, {}).catch(e => { console.error(e.message); process.exit(1); });
         success(`Joined org as ${res.member.role}.`);
-        kv([['org_id', res.member.organizationId], ['role', res.member.role]]);
+        kv([['org_id', res.member.org_id], ['role', res.member.role]]);
       }),
   );
 
@@ -388,10 +388,10 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
     const res     = await http.get<{ workspaces: WsRow[] }>(`/v1/orgs/${orgSlug}/workspaces`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.workspaces, opts.output, (wide) => {
       table(res.workspaces, [
-        { key: 'shortId',   label: 'ID' },
+        { key: 'short_id',   label: 'ID' },
         { key: 'slug',      label: 'SLUG' },
         { key: 'name',      label: 'NAME' },
-        { key: 'isDefault', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
+        { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
       ] as ColDef<WsRow>[], { wide, emptyHint: `No workspaces yet.  Run: ${cli} ws create --name <n>` } as TableOpts & { wide: boolean });
       summary(`${res.workspaces.length} workspace${res.workspaces.length !== 1 ? 's' : ''}`);
@@ -424,7 +424,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         const res     = await http.post<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Workspace created: ${res.workspace.slug}`);
-        kv([['id', res.workspace.shortId], ['slug', res.workspace.slug]]);
+        kv([['id', res.workspace.short_id], ['slug', res.workspace.slug]]);
       }),
   );
 
@@ -437,7 +437,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         const res = await http.get<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         printOutput(res.workspace as unknown as Record<string, unknown>, opts.output, () => {
-          kv([['id', res.workspace.shortId], ['slug', res.workspace.slug], ['name', res.workspace.name], ['full_id', res.workspace.id]]);
+          kv([['id', res.workspace.short_id], ['slug', res.workspace.slug], ['name', res.workspace.name], ['full_id', res.workspace.id]]);
         }, 'slug');
       }),
   );
@@ -456,7 +456,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
         if (opts.slug) body['slug'] = opts.slug;
         const res = await http.patch<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Workspace updated.');
-        kv([['id', res.workspace.shortId], ['slug', res.workspace.slug], ['name', res.workspace.name]]);
+        kv([['id', res.workspace.short_id], ['slug', res.workspace.slug], ['name', res.workspace.name]]);
       }),
   );
 
@@ -489,10 +489,10 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
     const res     = await http.get<{ projects: ProjRow[] }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.projects, opts.output, (wide) => {
       table(res.projects, [
-        { key: 'shortId',   label: 'ID' },
+        { key: 'short_id',   label: 'ID' },
         { key: 'slug',      label: 'SLUG' },
         { key: 'name',      label: 'NAME' },
-        { key: 'isDefault', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
+        { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
       ] as ColDef<ProjRow>[], { wide, emptyHint: `No projects yet.  Run: ${cli} proj create --name <n>` } as TableOpts & { wide: boolean });
       summary(`${res.projects.length} project${res.projects.length !== 1 ? 's' : ''}`);
@@ -529,7 +529,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
         const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
         const res     = await http.post<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Project created: ${res.project.slug}`);
-        kv([['id', res.project.shortId], ['slug', res.project.slug]]);
+        kv([['id', res.project.short_id], ['slug', res.project.slug]]);
       }),
   );
 
@@ -544,7 +544,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
         const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
         const res = await http.get<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         printOutput(res.project as unknown as Record<string, unknown>, opts.output, () => {
-          kv([['id', res.project.shortId], ['slug', res.project.slug], ['name', res.project.name], ['full_id', res.project.id]]);
+          kv([['id', res.project.short_id], ['slug', res.project.slug], ['name', res.project.name], ['full_id', res.project.id]]);
         }, 'slug');
       }),
   );
@@ -564,10 +564,10 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
         const body: Record<string, unknown> = {};
         if (opts.name) body['name'] = opts.name;
         if (opts.slug) body['slug'] = opts.slug;
-        if (opts.default) body['isDefault'] = true;
+        if (opts.default) body['is_default'] = true;
         const res = await http.patch<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Project updated.');
-        kv([['id', res.project.shortId], ['slug', res.project.slug], ['name', res.project.name], ['default', res.project.isDefault ? '✓' : '']]);
+        kv([['id', res.project.short_id], ['slug', res.project.slug], ['name', res.project.name], ['default', res.project.is_default ? '✓' : '']]);
       }),
   );
 
@@ -609,10 +609,10 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
     const res = await http.get<{ envs: EnvRow[] }>(basePath(orgSlug, wsSlug, projSlug)).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.envs, opts.output, (wide) => {
       table(res.envs, [
-        { key: 'shortId',   label: 'ID' },
+        { key: 'short_id',   label: 'ID' },
         { key: 'slug',      label: 'SLUG' },
         { key: 'name',      label: 'NAME' },
-        { key: 'isDefault', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
+        { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
       ] as ColDef<EnvRow>[], { wide, emptyHint: `No envs yet.  Run: ${cli} env create --name <n>` } as TableOpts & { wide: boolean });
       summary(`${res.envs.length} env${res.envs.length !== 1 ? 's' : ''}`);
@@ -653,7 +653,7 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
         const projSlug = activeProjSlug(ctx, cli, opts.proj);
         const res = await http.post<{ env: EnvRow }>(basePath(orgSlug, wsSlug, projSlug), { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Env created: ${res.env.slug}`);
-        kv([['id', res.env.shortId], ['slug', res.env.slug]]);
+        kv([['id', res.env.short_id], ['slug', res.env.slug]]);
       }),
   );
 
@@ -670,7 +670,7 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
         const projSlug = activeProjSlug(ctx, cli, opts.proj);
         const res = await http.get<{ env: EnvRow }>(`${basePath(orgSlug, wsSlug, projSlug)}/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         printOutput(res.env as unknown as Record<string, unknown>, opts.output, () => {
-          kv([['id', res.env.shortId], ['slug', res.env.slug], ['name', res.env.name], ['full_id', res.env.id]]);
+          kv([['id', res.env.short_id], ['slug', res.env.slug], ['name', res.env.name], ['full_id', res.env.id]]);
         }, 'slug');
       }),
   );
@@ -693,7 +693,7 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
         if (opts.slug) body['slug'] = opts.slug;
         const res = await http.patch<{ env: EnvRow }>(`${basePath(orgSlug, wsSlug, projSlug)}/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Env updated.');
-        kv([['id', res.env.shortId], ['slug', res.env.slug], ['name', res.env.name]]);
+        kv([['id', res.env.short_id], ['slug', res.env.slug], ['name', res.env.name]]);
       }),
   );
 

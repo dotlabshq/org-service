@@ -1,16 +1,21 @@
 {
   "name": "@baseworks/org",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Org capability: typed HTTP client, event catalog, projections, and CLI plugin for org-service. Contract-first, versioned with the service.",
   "type": "module",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": "./dist/client.js",
     "./events": "./dist/events.js",
     "./projections": "./dist/projections.js",
     "./cli": "./dist/cli.js"
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",

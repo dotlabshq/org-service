@@ -8,28 +8,28 @@ afterAll(() => server.close())
 
 const ORG = {
   id:        '019f05bd-ebf7-7db6-956d-f323dfadba50',
-  shortId:   'n2shs8',
+  short_id:   'n2shs8',
   slug:      'acme',
   name:      'Acme',
   metadata:  null,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 const ORG2 = {
   id:        '019f05bc-8f7c-716d-8530-3a3683ea2411',
-  shortId:   'kf5wnb',
+  short_id:   'kf5wnb',
   slug:      'acme',
   name:      'Acme Inc',
   metadata:  null,
-  createdAt: 1782507671419,
-  updatedAt: 1782507671419,
+  created_at: 1782507671419,
+  updated_at: 1782507671419,
 }
 
 // ── list ─────────────────────────────────────────────────────────────────────
 
 describe('flect org (list)', () => {
-  it('default columns: ID (shortId) → SLUG → NAME', async () => {
+  it('default columns: ID (short_id) → SLUG → NAME', async () => {
     mocks.mockGet('/v1/orgs', { orgs: [ORG, ORG2] })
     const r = await run(['org'])
     expect(r.exitCode).toBe(0)
@@ -61,7 +61,7 @@ describe('flect org (list)', () => {
     expect(r.exitCode).toBe(0)
     const parsed = JSON.parse(r.stdout)
     expect(Array.isArray(parsed)).toBe(true)
-    expect(parsed[0].shortId).toBe('n2shs8')
+    expect(parsed[0].short_id).toBe('n2shs8')
   })
 })
 
@@ -110,7 +110,7 @@ describe('flect orgs (plural alias) and ls subcommand', () => {
 
 describe('flect org create', () => {
   it('sends only name when no slug given (API generates slug from name)', async () => {
-    const captured = mocks.mockPostCapture('/v1/orgs', { org: { ...ORG, slug: 'my-org', shortId: 'abc123' } })
+    const captured = mocks.mockPostCapture('/v1/orgs', { org: { ...ORG, slug: 'my-org', short_id: 'abc123' } })
     const r = await run(['org', 'create', '--name', 'My Org'])
     expect(r.exitCode).toBe(0)
     const body = captured.body as Record<string, unknown>
@@ -124,7 +124,7 @@ describe('flect org create', () => {
     expect((captured.body as Record<string, unknown>).slug).toBe('acme')
   })
 
-  it('shows shortId (not full UUID) in output', async () => {
+  it('shows short_id (not full UUID) in output', async () => {
     mocks.mockPost('/v1/orgs', { org: ORG })
     const r = await run(['org', 'create', '--name', 'Acme'])
     expect(r.stdout).toContain('n2shs8')
@@ -142,14 +142,14 @@ describe('flect org get', () => {
     expect(r.stdout).toContain('Acme')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockGet('/v1/orgs/n2shs8', { org: ORG })
     const r = await run(['org', 'get', 'n2shs8'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('Acme')
   })
 
-  it('id field shows shortId, full_id field shows UUID', async () => {
+  it('id field shows short_id, full_id field shows UUID', async () => {
     mocks.mockGet('/v1/orgs/acme', { org: ORG })
     const r = await run(['org', 'get', 'acme'])
     const lines = r.stdout.split('\n')
@@ -169,7 +169,7 @@ describe('flect org update', () => {
     expect((captured.body as Record<string, unknown>).name).toBe('Acme HQ')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     const captured = mocks.mockPatchCapture('/v1/orgs/n2shs8', { org: { ...ORG, name: 'Acme HQ' } })
     const r = await run(['org', 'update', 'n2shs8', '--name', 'Acme HQ'])
     expect(r.exitCode).toBe(0)
@@ -187,7 +187,7 @@ describe('flect org delete', () => {
     expect(r.stdout).toContain('acme')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockDelete('/v1/orgs/n2shs8')
     const r = await run(['org', 'delete', 'n2shs8'])
     expect(r.exitCode).toBe(0)

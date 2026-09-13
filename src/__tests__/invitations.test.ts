@@ -12,7 +12,7 @@ const INVITER_EMAIL = 'owner@acme.test'
 const INVITEE = 'ada@example.com'
 const invitee = (id = 'usr_ada') => makeToken(id, INVITEE)
 
-type Invitation = { id: string; email: string; role: string; organizationId: string; orgSlug?: string }
+type Invitation = { id: string; email: string; role: string; org_id: string; org_slug?: string }
 
 beforeAll(async () => {
   fb = await bootTestFoldBase()
@@ -102,7 +102,7 @@ describe('the invitee side', () => {
     const { invitations } = await json<{ invitations: Invitation[] }>(await app.get('/invitations', invitee()))
     expect(invitations).toHaveLength(1)
     // Enriched so a console can say which org without a second lookup.
-    expect(invitations[0]).toMatchObject({ email: INVITEE, orgSlug: 'acme' })
+    expect(invitations[0]).toMatchObject({ email: INVITEE, org_slug: 'acme' })
   })
 
   it('accepts it and becomes a member, and the invitation stops being pending', async () => {
@@ -111,13 +111,13 @@ describe('the invitee side', () => {
 
     const res = await app.post('/invitations/' + (await pendingId()) + '/accept', {}, invitee())
     expect(res.status).toBe(201)
-    expect((await json<{ member: { userId: string; role: string } }>(res)).member)
-      .toMatchObject({ userId: 'usr_ada', role: 'member' })
+    expect((await json<{ member: { user_id: string; role: string } }>(res)).member)
+      .toMatchObject({ user_id: 'usr_ada', role: 'member' })
 
-    const { members } = await json<{ members: Array<{ userId: string }> }>(
+    const { members } = await json<{ members: Array<{ user_id: string }> }>(
       await app.get('/orgs/acme/members', makeToken(USER_ID, INVITER_EMAIL)),
     )
-    expect(members.map((m) => m.userId)).toContain('usr_ada')
+    expect(members.map((m) => m.user_id)).toContain('usr_ada')
 
     const { invitations } = await json<{ invitations: Invitation[] }>(await app.get('/invitations', invitee()))
     expect(invitations).toHaveLength(0)
@@ -133,10 +133,10 @@ describe('the invitee side', () => {
     const res = await app.post(`/invitations/${id}/accept`, {}, makeToken('usr_mallory', 'mallory@evil.test'))
     expect(res.status).toBe(404)
 
-    const { members } = await json<{ members: Array<{ userId: string }> }>(
+    const { members } = await json<{ members: Array<{ user_id: string }> }>(
       await app.get('/orgs/acme/members', makeToken(USER_ID, INVITER_EMAIL)),
     )
-    expect(members.map((m) => m.userId)).not.toContain('usr_mallory')
+    expect(members.map((m) => m.user_id)).not.toContain('usr_mallory')
   })
 
   it('cannot accept a revoked invitation', async () => {

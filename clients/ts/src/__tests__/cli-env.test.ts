@@ -14,22 +14,22 @@ const BASE      = `/v1/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects/${PROJ_SL
 
 const ENV = {
   id:        '019f08dd-5555-7db6-956d-f323dfadba50',
-  shortId:   'ev1abc',
+  short_id:   'ev1abc',
   slug:      'production',
   name:      'Production',
-  isDefault: true,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: true,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 const ENV2 = {
   id:        '019f08de-6666-7db6-956d-f323dfadba50',
-  shortId:   'ev2xyz',
+  short_id:   'ev2xyz',
   slug:      'preview',
   name:      'Preview',
-  isDefault: false,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: false,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 // ── list ─────────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ describe('flect env (list)', () => {
     const r = await run(['env', '-o', 'json', ...OPT])
     const parsed = JSON.parse(r.stdout)
     expect(Array.isArray(parsed)).toBe(true)
-    expect(parsed[0].shortId).toBe('ev1abc')
+    expect(parsed[0].short_id).toBe('ev1abc')
   })
 })
 
@@ -87,7 +87,7 @@ describe('flect env create', () => {
     expect((captured.body as Record<string, unknown>).slug).toBe('production')
   })
 
-  it('shows shortId in output, not full UUID', async () => {
+  it('shows short_id in output, not full UUID', async () => {
     mocks.mockPost(BASE, { env: ENV })
     const r = await run(['env', 'create', '--name', 'Production', ...OPT])
     expect(r.stdout).toContain('ev1abc')
@@ -105,14 +105,14 @@ describe('flect env get', () => {
     expect(r.stdout).toContain('Production')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockGet(`${BASE}/ev1abc`, { env: ENV })
     const r = await run(['env', 'get', 'ev1abc', ...OPT])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('Production')
   })
 
-  it('id field shows shortId, full_id field shows UUID', async () => {
+  it('id field shows short_id, full_id field shows UUID', async () => {
     mocks.mockGet(`${BASE}/production`, { env: ENV })
     const r = await run(['env', 'get', 'production', ...OPT])
     const lines  = r.stdout.split('\n')
@@ -132,7 +132,7 @@ describe('flect env update', () => {
     expect((captured.body as Record<string, unknown>).name).toBe('Production v2')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     const captured = mocks.mockPatchCapture(`${BASE}/ev1abc`, { env: { ...ENV, name: 'Production v2' } })
     const r = await run(['env', 'update', 'ev1abc', '--name', 'Production v2', ...OPT])
     expect(r.exitCode).toBe(0)
@@ -150,7 +150,7 @@ describe('flect env delete', () => {
     expect(r.stdout).toContain('production')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockDelete(`${BASE}/ev1abc`)
     const r = await run(['env', 'delete', 'ev1abc', ...OPT])
     expect(r.exitCode).toBe(0)

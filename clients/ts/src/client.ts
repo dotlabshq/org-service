@@ -165,7 +165,7 @@ export class OrgClient {
     const { members } = await this.api<{ members: Membership[] }>('GET', `/v1/orgs/${ref}/members`)
     return members
   }
-  async addMember(ref: string, input: { userId: string; role: Role }): Promise<Membership> {
+  async addMember(ref: string, input: { user_id: string; role: Role }): Promise<Membership> {
     const { member } = await this.api<{ member: Membership }>('POST', `/v1/orgs/${ref}/members`, input)
     return member
   }

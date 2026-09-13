@@ -7,7 +7,7 @@ import type { Role, ScopeRow } from '@baseworks/org'
 
 const slug = z.string().min(1).regex(/^[a-z0-9-]+$/)
 const body = z.object({ name: z.string().min(1), slug: slug.optional() })
-const patchBody = z.object({ name: z.string().min(1).optional(), slug: slug.optional(), isDefault: z.boolean().optional() })
+const patchBody = z.object({ name: z.string().min(1).optional(), slug: slug.optional(), is_default: z.boolean().optional() })
 
 function fail(err: unknown): never {
   if (err instanceof StoreError) throw err

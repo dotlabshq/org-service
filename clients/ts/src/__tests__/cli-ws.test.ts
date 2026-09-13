@@ -12,22 +12,22 @@ const OPT      = ['--org', ORG_SLUG]
 
 const WS = {
   id:        '019f06aa-1111-7db6-956d-f323dfadba50',
-  shortId:   'ws1234',
+  short_id:   'ws1234',
   slug:      'staging',
   name:      'Staging',
-  isDefault: true,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: true,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 const WS2 = {
   id:        '019f06ab-2222-7db6-956d-f323dfadba50',
-  shortId:   'ws5678',
+  short_id:   'ws5678',
   slug:      'production',
   name:      'Production',
-  isDefault: false,
-  createdAt: 1782507760630,
-  updatedAt: 1782507760630,
+  is_default: false,
+  created_at: 1782507760630,
+  updated_at: 1782507760630,
 }
 
 // ── plural alias + ls subcommand ──────────────────────────────────────────────
@@ -89,7 +89,7 @@ describe('flect ws (list)', () => {
     const r = await run(['ws', '-o', 'json', ...OPT])
     const parsed = JSON.parse(r.stdout)
     expect(Array.isArray(parsed)).toBe(true)
-    expect(parsed[0].shortId).toBe('ws1234')
+    expect(parsed[0].short_id).toBe('ws1234')
   })
 })
 
@@ -111,7 +111,7 @@ describe('flect ws create', () => {
     expect((captured.body as Record<string, unknown>).slug).toBe('staging')
   })
 
-  it('shows shortId in output, not full UUID', async () => {
+  it('shows short_id in output, not full UUID', async () => {
     mocks.mockPost(`/v1/orgs/${ORG_SLUG}/workspaces`, { workspace: WS })
     const r = await run(['ws', 'create', '--name', 'Staging', ...OPT])
     expect(r.stdout).toContain('ws1234')
@@ -129,14 +129,14 @@ describe('flect ws get', () => {
     expect(r.stdout).toContain('Staging')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockGet(`/v1/orgs/${ORG_SLUG}/workspaces/ws1234`, { workspace: WS })
     const r = await run(['ws', 'get', 'ws1234', ...OPT])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('Staging')
   })
 
-  it('id field shows shortId, full_id field shows UUID', async () => {
+  it('id field shows short_id, full_id field shows UUID', async () => {
     mocks.mockGet(`/v1/orgs/${ORG_SLUG}/workspaces/staging`, { workspace: WS })
     const r = await run(['ws', 'get', 'staging', ...OPT])
     const lines  = r.stdout.split('\n')
@@ -156,7 +156,7 @@ describe('flect ws update', () => {
     expect((captured.body as Record<string, unknown>).name).toBe('Staging Env')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     const captured = mocks.mockPatchCapture(`/v1/orgs/${ORG_SLUG}/workspaces/ws1234`, { workspace: { ...WS, name: 'Staging Env' } })
     const r = await run(['ws', 'update', 'ws1234', '--name', 'Staging Env', ...OPT])
     expect(r.exitCode).toBe(0)
@@ -174,7 +174,7 @@ describe('flect ws delete', () => {
     expect(r.stdout).toContain('staging')
   })
 
-  it('works with shortId', async () => {
+  it('works with short_id', async () => {
     mocks.mockDelete(`/v1/orgs/${ORG_SLUG}/workspaces/ws1234`)
     const r = await run(['ws', 'delete', 'ws1234', ...OPT])
     expect(r.exitCode).toBe(0)

@@ -90,7 +90,7 @@ describe('PDP — check (deny-by-default)', () => {
   it('owner passes; member is gated by min role; unknown action denied', async () => {
     const { orgId, projectId } = await setup()
     await app.post('/apps/register', MANIFEST)
-    await app.post('/v1/orgs/acme/members', { userId: 'user-mem', role: 'member' })
+    await app.post('/v1/orgs/acme/members', { user_id: 'user-mem', role: 'member' })
 
     const mem = makeToken('user-mem')
     // member can deploy (min member) at the project — role inherited from the org

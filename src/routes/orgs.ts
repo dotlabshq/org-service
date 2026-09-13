@@ -16,6 +16,29 @@ export function orgsRouter(store: Store) {
   const app = new Hono()
   app.use('*', requireAuth)
 
+  /**
+   * Services allowed to write memberships, by token subject:
+   *
+   *   ORG_MEMBERSHIP_WRITERS=zone9-api,other-service
+   *
+   * Deny by default — an empty list means no service may. This exists because
+   * the alternative in practice was worse: a product API that needed to add a
+   * member was minting a token *as the inviting user* with the shared signing
+   * secret, because acting as itself was not allowed. Naming the service here
+   * grants exactly that one power, to exactly those services, and lets the
+   * impersonation stop.
+   *
+   * It is an allowlist rather than "any service token" because a membership
+   * write grants access to somebody's resources; reading the org list does not.
+   */
+  function mayWriteMembership(subject: string): boolean {
+    const allowed = (process.env['ORG_MEMBERSHIP_WRITERS'] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return allowed.includes(subject)
+  }
+
   async function requireOrg(ref: string, userId: string, roles?: Role[]): Promise<{ orgId: string }> {
     const row = await store.orgRowByRef(ref)
     if (!row) throw new StoreError(404, 'not_found')
@@ -112,9 +135,29 @@ export function orgsRouter(store: Store) {
     return c.json({ members: await store.listMembers(orgId) })
   })
 
+  /**
+   * Resolve the org for a membership write.
+   *
+   * An owner or admin may do it. So may a service named in
+   * ORG_MEMBERSHIP_WRITERS, acting as itself — the audit trail then records the
+   * service as the actor, which is the truth, instead of a user who never
+   * pressed anything.
+   */
+  async function orgForMembershipWrite(c: {
+    req: { param: (k: string) => string }
+  }, auth: { userId: string; tokenType: string }): Promise<{ orgId: string }> {
+    if (auth.tokenType === 'service') {
+      if (!mayWriteMembership(auth.userId)) throw new StoreError(403, 'forbidden')
+      const row = await store.orgRowByRef(c.req.param('ref'))
+      if (!row) throw new StoreError(404, 'not_found')
+      return { orgId: row.id }
+    }
+    return requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+  }
+
   app.post('/v1/orgs/:ref/members', zValidator('json', z.object({ userId: z.string().min(1), role: Role })), async (c) => {
     const auth = c.get('auth')
-    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    const { orgId } = await orgForMembershipWrite(c, auth)
     const input = c.req.valid('json')
     const member = await store.addMember({ orgId, userId: input.userId, role: input.role, actor: auth.userId }).catch(fail)
     return c.json({ member }, 201)
@@ -122,7 +165,7 @@ export function orgsRouter(store: Store) {
 
   app.delete('/v1/orgs/:ref/members/:userId', async (c) => {
     const auth = c.get('auth')
-    const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
+    const { orgId } = await orgForMembershipWrite(c, auth)
     await store.removeMember(orgId, c.req.param('userId'), auth.userId).catch(fail)
     return c.json({ ok: true })
   })

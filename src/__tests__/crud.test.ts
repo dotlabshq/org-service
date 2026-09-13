@@ -287,3 +287,63 @@ describe('PATCH /v1/orgs/:ref — slug', () => {
     }
   })
 })
+
+// ── membership writes by a service ────────────────────────────────────────────
+
+describe('service tokens and membership', () => {
+  const writer = () => makeServiceToken('zone9-api')
+
+  it('refuses by default, even for a service token', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a service named in the allowlist, and records it as the actor', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
+    try {
+      const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      expect(res.status).toBe(201)
+
+      const { members } = await json<{ members: Array<{ userId: string; role: string }> }>(
+        await app.get('/v1/orgs/acme/members'),
+      )
+      expect(members.map((m) => m.userId)).toContain('usr_new')
+    } finally {
+      delete process.env['ORG_MEMBERSHIP_WRITERS']
+    }
+  })
+
+  it('does not let an unlisted service in when another one is listed', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    process.env['ORG_MEMBERSHIP_WRITERS'] = 'billing'
+    try {
+      const res = await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      expect(res.status).toBe(403)
+    } finally {
+      delete process.env['ORG_MEMBERSHIP_WRITERS']
+    }
+  })
+
+  it('can remove a member too, so a failed invite can be undone', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
+    try {
+      await app.post('/v1/orgs/acme/members', { userId: 'usr_new', role: 'member' }, writer())
+      expect((await app.del('/v1/orgs/acme/members/usr_new', writer())).status).toBe(200)
+    } finally {
+      delete process.env['ORG_MEMBERSHIP_WRITERS']
+    }
+  })
+
+  it('still refuses an unknown org with 404, not 403', async () => {
+    process.env['ORG_MEMBERSHIP_WRITERS'] = 'zone9-api'
+    try {
+      const res = await app.post('/v1/orgs/nope/members', { userId: 'usr_new', role: 'member' }, writer())
+      expect(res.status).toBe(404)
+    } finally {
+      delete process.env['ORG_MEMBERSHIP_WRITERS']
+    }
+  })
+})

@@ -1,6 +1,6 @@
 {
   "name": "@dotlabshq/org-service",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@baseworks/core": "^0.2.1",
+    "@baseworks/core": "workspace:*",
     "@baseworks/foldbase": "workspace:*",
     "@baseworks/org": "workspace:*",
     "@baseworks/sdk": "^0.1.2"

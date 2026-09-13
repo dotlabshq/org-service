@@ -6,6 +6,19 @@ import { scopesRouter } from './routes/scopes.js'
 import { authzRouter } from './routes/authz.js'
 import { appsRouter } from './routes/apps.js'
 import { StoreError, createStore } from './store.js'
+import { serviceManifest } from '@baseworks/core/service'
+import { readFileSync } from 'node:fs'
+
+// Read once: the release is a build-time fact, and re-reading it per request
+// would turn a manifest fetch into disk I/O.
+const VERSION = (() => {
+  try {
+    return (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as
+      { version?: string }).version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
 
 /** Register read models + policies on boot (idempotent, like migrations). */
 export async function registerDefinitions(fb: FoldBase): Promise<void> {
@@ -19,6 +32,40 @@ export function createApp(fb: FoldBase): Hono {
   const app = new Hono()
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'org-service' }))
+
+  // What this service is and what contract it speaks. Unauthenticated: it holds
+  // no secrets, and its readers include the gateway and signed-out clients.
+  app.get('/.well-known/service', (c) =>
+    c.json(
+      serviceManifest({
+        name: 'org',
+        version: VERSION,
+        // Moves only when the HTTP surface breaks callers, not every release.
+        api_version: '1.0',
+        openapi_url: '/openapi.yaml',
+        capabilities: [
+          'orgs',
+          'members',
+          'scopes',
+          'pdp',
+          // Deliberately absent: `invitations`. The client package defines the
+          // surface but this service has no routes for it, so a consumer must
+          // not branch as though it were there.
+        ],
+      }),
+    ),
+  )
+
+  // The contract itself, served from the repo file so document and code ship
+  // together and cannot drift apart between releases.
+  app.get('/openapi.yaml', (c) => {
+    try {
+      const spec = readFileSync(new URL('../openapi.yaml', import.meta.url), 'utf8')
+      return c.body(spec, 200, { 'content-type': 'application/yaml; charset=utf-8' })
+    } catch {
+      return c.json({ error: 'spec not bundled with this build' }, 404)
+    }
+  })
 
   // Routes live at the service ROOT: `/orgs`, `/authz`, `/apps`. A gateway
   // publishes the realm at `/v1/org/...` and strips that prefix, so the service

@@ -49,7 +49,7 @@ export function orgsRouter(store: Store) {
     return { orgId: row.id }
   }
 
-  app.get('/v1/orgs', async (c) => {
+  app.get('/orgs', async (c) => {
     const auth = c.get('auth')
     return c.json({ orgs: await store.listOrgsForUser(auth.userId) })
   })
@@ -59,13 +59,13 @@ export function orgsRouter(store: Store) {
    * çağıran servisin (ör. bir platform paneli) kendi operatör yetkisini
    * kendi tarafında doğrulayıp kullandığı bir listedir.
    */
-  app.get('/v1/all-orgs', async (c) => {
+  app.get('/all-orgs', async (c) => {
     const auth = c.get('auth')
     if (auth.tokenType !== 'service') return c.json({ error: 'forbidden' }, 403)
     return c.json({ orgs: await store.listAllOrgs() })
   })
 
-  app.post('/v1/orgs', zValidator('json', z.object({ name: z.string().min(1), slug: slug.optional() })), async (c) => {
+  app.post('/orgs', zValidator('json', z.object({ name: z.string().min(1), slug: slug.optional() })), async (c) => {
     const auth = c.get('auth')
     const input = c.req.valid('json')
     const org = await store.createOrg({ name: input.name, slug: input.slug, ownerId: auth.userId }).catch(fail)
@@ -83,7 +83,7 @@ export function orgsRouter(store: Store) {
    * has an account here, leak one probe at a time. Until now this endpoint
    * checked nothing at all and any signed-in user could read any org by slug.
    */
-  app.get('/v1/orgs/:ref', async (c) => {
+  app.get('/orgs/:ref', async (c) => {
     const auth = c.get('auth')
     const row = await store.orgRowByRef(c.req.param('ref'))
     if (!row) return c.json({ error: 'not_found' }, 404)
@@ -97,14 +97,14 @@ export function orgsRouter(store: Store) {
     return c.json({ org })
   })
 
-  app.patch('/v1/orgs/:ref', zValidator('json', z.object({ name: z.string().min(1).optional(), slug: slug.optional() })), async (c) => {
+  app.patch('/orgs/:ref', zValidator('json', z.object({ name: z.string().min(1).optional(), slug: slug.optional() })), async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
     const org = await store.updateOrg(orgId, c.req.valid('json'), auth.userId).catch(fail)
     return c.json({ org })
   })
 
-  app.delete('/v1/orgs/:ref', async (c) => {
+  app.delete('/orgs/:ref', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner'])
     await store.archiveOrg(orgId, auth.userId).catch(fail)
@@ -113,14 +113,14 @@ export function orgsRouter(store: Store) {
 
   // ── metadata ──────────────────────────────────────────────────────────────
 
-  app.patch('/v1/orgs/:ref/metadata', zValidator('json', z.record(z.unknown())), async (c) => {
+  app.patch('/orgs/:ref/metadata', zValidator('json', z.record(z.unknown())), async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
     await store.setOrgMetadata(orgId, c.req.valid('json'), [], auth.userId).catch(fail)
     return c.json({ ok: true })
   })
 
-  app.delete('/v1/orgs/:ref/metadata/:key', async (c) => {
+  app.delete('/orgs/:ref/metadata/:key', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
     await store.setOrgMetadata(orgId, {}, [c.req.param('key')], auth.userId).catch(fail)
@@ -129,7 +129,7 @@ export function orgsRouter(store: Store) {
 
   // ── members ─────────────────────────────────────────────────────────────────
 
-  app.get('/v1/orgs/:ref/members', async (c) => {
+  app.get('/orgs/:ref/members', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin', 'member', 'viewer'])
     return c.json({ members: await store.listMembers(orgId) })
@@ -155,7 +155,7 @@ export function orgsRouter(store: Store) {
     return requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
   }
 
-  app.post('/v1/orgs/:ref/members', zValidator('json', z.object({ userId: z.string().min(1), role: Role })), async (c) => {
+  app.post('/orgs/:ref/members', zValidator('json', z.object({ userId: z.string().min(1), role: Role })), async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgForMembershipWrite(c, auth)
     const input = c.req.valid('json')
@@ -163,7 +163,7 @@ export function orgsRouter(store: Store) {
     return c.json({ member }, 201)
   })
 
-  app.delete('/v1/orgs/:ref/members/:userId', async (c) => {
+  app.delete('/orgs/:ref/members/:userId', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgForMembershipWrite(c, auth)
     await store.removeMember(orgId, c.req.param('userId'), auth.userId).catch(fail)

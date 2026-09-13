@@ -19,10 +19,19 @@ export function createApp(fb: FoldBase): Hono {
   const app = new Hono()
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'org-service' }))
-  app.route('/', orgsRouter(store))
-  app.route('/', scopesRouter(store))
-  app.route('/', authzRouter(store))
-  app.route('/', appsRouter(store))
+
+  // Routes live at the service ROOT: `/orgs`, `/authz`, `/apps`. A gateway
+  // publishes the realm at `/v1/org/...` and strips that prefix, so the service
+  // never encodes where it happens to be mounted. Until now the prefixes were
+  // inconsistent anyway — `/v1/orgs` but `/authz` and `/apps` — which meant
+  // every new caller had to be told which was which.
+  const routers = [orgsRouter(store), scopesRouter(store), authzRouter(store), appsRouter(store)]
+  for (const r of routers) app.route('/', r)
+
+  // Legacy mount. Callers still using `/v1/orgs` keep working, including the
+  // published @baseworks/org client and anything pointed straight at the
+  // service. Remove once every consumer is on the gateway path.
+  for (const r of routers) app.route('/v1', r)
 
   app.onError((err, c) => {
     if (err instanceof StoreError) return c.json({ error: err.code, message: err.message }, err.status as never)

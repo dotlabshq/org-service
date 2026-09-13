@@ -37,13 +37,13 @@ export function scopesRouter(store: Store) {
 
   // ── workspaces ───────────────────────────────────────────────────────────────
 
-  app.get('/v1/orgs/:orgRef/workspaces', async (c) => {
+  app.get('/orgs/:orgRef/workspaces', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgCtx(c.req.param('orgRef'), auth.userId)
     return c.json({ workspaces: await store.listScopes(orgId, 'workspace', orgId) })
   })
 
-  app.post('/v1/orgs/:orgRef/workspaces', zValidator('json', body), async (c) => {
+  app.post('/orgs/:orgRef/workspaces', zValidator('json', body), async (c) => {
     const auth = c.get('auth')
     const { orgId, role } = await orgCtx(c.req.param('orgRef'), auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -52,14 +52,14 @@ export function scopesRouter(store: Store) {
     return c.json({ workspace }, 201)
   })
 
-  app.get('/v1/orgs/:orgRef/workspaces/:wsRef', async (c) => {
+  app.get('/orgs/:orgRef/workspaces/:wsRef', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgCtx(c.req.param('orgRef'), auth.userId)
     const ws = await resolve(orgId, 'workspace', orgId, c.req.param('wsRef'))
     return c.json({ workspace: store.toScope(ws) })
   })
 
-  app.patch('/v1/orgs/:orgRef/workspaces/:wsRef', zValidator('json', patchBody), async (c) => {
+  app.patch('/orgs/:orgRef/workspaces/:wsRef', zValidator('json', patchBody), async (c) => {
     const auth = c.get('auth')
     const { orgId, role } = await orgCtx(c.req.param('orgRef'), auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -68,7 +68,7 @@ export function scopesRouter(store: Store) {
     return c.json({ workspace })
   })
 
-  app.delete('/v1/orgs/:orgRef/workspaces/:wsRef', async (c) => {
+  app.delete('/orgs/:orgRef/workspaces/:wsRef', async (c) => {
     const auth = c.get('auth')
     const { orgId, role } = await orgCtx(c.req.param('orgRef'), auth.userId)
     if (!canDelete(role)) return c.json({ error: 'forbidden' }, 403)
@@ -85,13 +85,13 @@ export function scopesRouter(store: Store) {
     return { orgId, role, wsId: ws.id }
   }
 
-  app.get('/v1/orgs/:orgRef/workspaces/:wsRef/projects', async (c) => {
+  app.get('/orgs/:orgRef/workspaces/:wsRef/projects', async (c) => {
     const auth = c.get('auth')
     const { orgId, wsId } = await wsCtx(c, auth.userId)
     return c.json({ projects: await store.listScopes(orgId, 'project', wsId) })
   })
 
-  app.post('/v1/orgs/:orgRef/workspaces/:wsRef/projects', zValidator('json', body), async (c) => {
+  app.post('/orgs/:orgRef/workspaces/:wsRef/projects', zValidator('json', body), async (c) => {
     const auth = c.get('auth')
     const { orgId, role, wsId } = await wsCtx(c, auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -100,14 +100,14 @@ export function scopesRouter(store: Store) {
     return c.json({ project }, 201)
   })
 
-  app.get('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', async (c) => {
+  app.get('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', async (c) => {
     const auth = c.get('auth')
     const { orgId, wsId } = await wsCtx(c, auth.userId)
     const proj = await resolve(orgId, 'project', wsId, c.req.param('projRef'))
     return c.json({ project: store.toScope(proj) })
   })
 
-  app.patch('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', zValidator('json', patchBody), async (c) => {
+  app.patch('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', zValidator('json', patchBody), async (c) => {
     const auth = c.get('auth')
     const { orgId, role, wsId } = await wsCtx(c, auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -116,7 +116,7 @@ export function scopesRouter(store: Store) {
     return c.json({ project })
   })
 
-  app.delete('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', async (c) => {
+  app.delete('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef', async (c) => {
     const auth = c.get('auth')
     const { orgId, role, wsId } = await wsCtx(c, auth.userId)
     if (!canDelete(role)) return c.json({ error: 'forbidden' }, 403)
@@ -133,13 +133,13 @@ export function scopesRouter(store: Store) {
     return { orgId, role, projId: proj.id }
   }
 
-  app.get('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs', async (c) => {
+  app.get('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs', async (c) => {
     const auth = c.get('auth')
     const { orgId, projId } = await projCtx(c, auth.userId)
     return c.json({ envs: await store.listScopes(orgId, 'environment', projId) })
   })
 
-  app.post('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs', zValidator('json', body), async (c) => {
+  app.post('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs', zValidator('json', body), async (c) => {
     const auth = c.get('auth')
     const { orgId, role, projId } = await projCtx(c, auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -148,14 +148,14 @@ export function scopesRouter(store: Store) {
     return c.json({ env }, 201)
   })
 
-  app.get('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', async (c) => {
+  app.get('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', async (c) => {
     const auth = c.get('auth')
     const { orgId, projId } = await projCtx(c, auth.userId)
     const env = await resolve(orgId, 'environment', projId, c.req.param('envRef'))
     return c.json({ env: store.toScope(env) })
   })
 
-  app.patch('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', zValidator('json', patchBody), async (c) => {
+  app.patch('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', zValidator('json', patchBody), async (c) => {
     const auth = c.get('auth')
     const { orgId, role, projId } = await projCtx(c, auth.userId)
     if (!canWrite(role)) return c.json({ error: 'forbidden' }, 403)
@@ -164,7 +164,7 @@ export function scopesRouter(store: Store) {
     return c.json({ env: updated })
   })
 
-  app.delete('/v1/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', async (c) => {
+  app.delete('/orgs/:orgRef/workspaces/:wsRef/projects/:projRef/envs/:envRef', async (c) => {
     const auth = c.get('auth')
     const { orgId, role, projId } = await projCtx(c, auth.userId)
     if (!canDelete(role)) return c.json({ error: 'forbidden' }, 403)

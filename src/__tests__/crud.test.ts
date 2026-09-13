@@ -347,3 +347,26 @@ describe('service tokens and membership', () => {
     }
   })
 })
+
+// ── path convention ───────────────────────────────────────────────────────────
+
+describe('mount paths', () => {
+  it('serves the same resource at the root and under the legacy /v1 prefix', async () => {
+    await json(await app.post('/orgs', { name: 'Acme', slug: 'acme' }))
+
+    // Root is canonical: a gateway publishes /v1/org/orgs and strips /v1/org.
+    const root = await app.get('/orgs/acme')
+    // Legacy, for callers not yet behind the gateway.
+    const legacy = await app.get('/v1/orgs/acme')
+
+    expect(root.status).toBe(200)
+    expect(legacy.status).toBe(200)
+    expect(await root.json()).toEqual(await legacy.json())
+  })
+
+  it('serves authz and apps at the root as well', async () => {
+    await json(await app.post('/orgs', { name: 'Acme', slug: 'acme' }))
+    expect((await app.get('/apps')).status).toBe(200)
+    expect((await app.get('/v1/apps')).status).toBe(200)
+  })
+})

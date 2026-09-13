@@ -77,12 +77,17 @@ describe('orgs', () => {
     expect((await app.get('/v1/orgs/nope')).status).toBe(404)
   })
 
-  it('updates name and slug (owner)', async () => {
+  it('updates the name (owner); the slug is immutable and refuses the whole patch', async () => {
     await createOrg()
-    const res = await app.patch('/v1/orgs/acme', { name: 'Acme Inc', slug: 'acme-inc' })
-    expect(res.status).toBe(200)
-    const { org } = await json<{ org: { name: string; slug: string } }>(res)
-    expect(org).toMatchObject({ name: 'Acme Inc', slug: 'acme-inc' })
+
+    const renamed = await app.patch('/v1/orgs/acme', { name: 'Acme Inc' })
+    expect(renamed.status).toBe(200)
+    expect((await json<{ org: { name: string; slug: string } }>(renamed)).org)
+      .toMatchObject({ name: 'Acme Inc', slug: 'acme' })
+
+    // A patch that also moves the slug is rejected outright rather than
+    // half-applied: names derived from the slug live in other systems.
+    expect((await app.patch('/v1/orgs/acme', { name: 'X', slug: 'acme-inc' })).status).toBe(409)
   })
 
   it('forbids update for a non-member (403)', async () => {
@@ -210,5 +215,75 @@ describe('all-orgs', () => {
 
   it('refuses a user token — this is not a user surface', async () => {
     expect((await app.get('/v1/all-orgs')).status).toBe(403)
+  })
+})
+
+// ── who may read an org ───────────────────────────────────────────────────────
+
+describe('GET /v1/orgs/:ref — membership', () => {
+  it('lets a member read it', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    const res = await app.get('/v1/orgs/acme')
+    expect(res.status).toBe(200)
+    expect((await json<{ org: { slug: string } }>(res)).org.slug).toBe('acme')
+  })
+
+  it('answers 404 to a non-member, so a slug guess reveals nothing', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+
+    // A different signed-in user who knows the slug.
+    const res = await app.get('/v1/orgs/acme', makeToken('usr_outsider'))
+
+    // 404 and not 403: 403 would confirm the org exists and turn this into a
+    // membership oracle.
+    expect(res.status).toBe(404)
+    expect(JSON.stringify(await res.json())).not.toContain('Acme')
+  })
+
+  it('still answers 404 for an org that does not exist', async () => {
+    expect((await app.get('/v1/orgs/nope')).status).toBe(404)
+  })
+
+  it('lets a service token read it', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    const res = await app.get('/v1/orgs/acme', makeServiceToken('zone9-api'))
+    expect(res.status).toBe(200)
+  })
+})
+
+// ── slug immutability ─────────────────────────────────────────────────────────
+
+describe('PATCH /v1/orgs/:ref — slug', () => {
+  it('refuses to change the slug by default', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+
+    const res = await app.patch('/v1/orgs/acme', { slug: 'acme-renamed' })
+    expect(res.status).toBe(409)
+    expect(JSON.stringify(await res.json())).toContain('slug_immutable')
+
+    // Unchanged, and still reachable under the original slug.
+    expect((await app.get('/v1/orgs/acme')).status).toBe(200)
+  })
+
+  it('still allows renaming the display name', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    const res = await app.patch('/v1/orgs/acme', { name: 'Acme Industries' })
+    expect(res.status).toBe(200)
+    expect((await json<{ org: { name: string; slug: string } }>(res)).org).toMatchObject({
+      name: 'Acme Industries',
+      slug: 'acme',
+    })
+  })
+
+  it('allows the change when a realm opts in', async () => {
+    await json(await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' }))
+    process.env['ORG_ALLOW_SLUG_CHANGE'] = 'true'
+    try {
+      const res = await app.patch('/v1/orgs/acme', { slug: 'acme-renamed' })
+      expect(res.status).toBe(200)
+      expect((await json<{ org: { slug: string } }>(res)).org.slug).toBe('acme-renamed')
+    } finally {
+      delete process.env['ORG_ALLOW_SLUG_CHANGE']
+    }
   })
 })

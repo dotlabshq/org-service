@@ -49,9 +49,28 @@ export function orgsRouter(store: Store) {
     return c.json({ org }, 201)
   })
 
+  /**
+   * Read one org.
+   *
+   * Members of any role may read it; a service token may too, on the same basis
+   * as `/v1/all-orgs` — a trusted caller that has done its own authorisation.
+   *
+   * A non-member gets **404, not 403**. 403 would confirm the org exists, which
+   * turns a slug guess into a membership oracle: names, and whether a company
+   * has an account here, leak one probe at a time. Until now this endpoint
+   * checked nothing at all and any signed-in user could read any org by slug.
+   */
   app.get('/v1/orgs/:ref', async (c) => {
+    const auth = c.get('auth')
+    const row = await store.orgRowByRef(c.req.param('ref'))
+    if (!row) return c.json({ error: 'not_found' }, 404)
+
+    if (auth.tokenType !== 'service') {
+      const role = await store.roleOf(row.id, auth.userId)
+      if (!role) return c.json({ error: 'not_found' }, 404)
+    }
+
     const org = await store.getOrg(c.req.param('ref'))
-    if (!org) return c.json({ error: 'not_found' }, 404)
     return c.json({ org })
   })
 

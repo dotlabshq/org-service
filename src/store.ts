@@ -180,6 +180,18 @@ export function createStore(fb: FoldBase) {
     if (!cur) throw new StoreError(404, 'not_found')
     const slug = patch.slug ?? cur.slug
     if (patch.slug && patch.slug !== cur.slug) {
+      // A slug is not a display name: hostnames, URLs and bookmarks are derived
+      // from it downstream — zone9 builds `<slug>.zone9.run` — and renaming it
+      // breaks all of them silently, in another system, with nothing here to
+      // show for it. Refused unless a realm explicitly takes that on.
+      if (process.env['ORG_ALLOW_SLUG_CHANGE'] !== 'true') {
+        throw new StoreError(
+          409,
+          'slug_immutable',
+          'Org slug cannot be changed; names derived from it (hostnames, URLs) would break. ' +
+            'Set ORG_ALLOW_SLUG_CHANGE=true only if nothing in this realm derives names from slugs.',
+        )
+      }
       if ((await q.query<OrgRow>('orgs', { where: { slug: { eq: patch.slug } }, limit: 1 })).rows[0]) {
         throw new StoreError(409, 'slug_taken', `Org slug '${patch.slug}' is taken`)
       }

@@ -79,6 +79,18 @@ export interface HttpClient {
  * validates); this is a thin, ergonomic wrapper over the REST surface. The
  * `.http` accessor exposes a generic ApiClient the CLI plugin consumes.
  */
+/**
+ * Paths here are the service's own — `/orgs`, not `/v1/orgs`.
+ *
+ * A service mounts its routes at its root and a gateway publishes it at
+ * `/v1/<name>`, stripping that prefix before the request arrives (ADR-042 §4),
+ * so a service never encodes where it happens to be mounted and neither does
+ * its client. `baseUrl` is wherever the service answers: the gateway mount, or
+ * the service itself.
+ *
+ * This means a server old enough to serve only the legacy `/v1` mount will not
+ * answer this client. Both mounts exist today; the legacy one is transitional.
+ */
 export class OrgClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof fetch
@@ -134,39 +146,39 @@ export class OrgClient {
   // ── organizations ─────────────────────────────────────────────────────────
 
   async listOrgs(): Promise<Organization[]> {
-    const { orgs } = await this.api<{ orgs: Organization[] }>('GET', '/v1/orgs')
+    const { orgs } = await this.api<{ orgs: Organization[] }>('GET', '/orgs')
     return orgs
   }
   async getOrg(ref: string): Promise<Organization> {
-    const { org } = await this.api<{ org: Organization }>('GET', `/v1/orgs/${ref}`)
+    const { org } = await this.api<{ org: Organization }>('GET', `/orgs/${ref}`)
     return org
   }
   async createOrg(input: { name: string; slug?: string }): Promise<Organization> {
-    const { org } = await this.api<{ org: Organization }>('POST', '/v1/orgs', input)
+    const { org } = await this.api<{ org: Organization }>('POST', '/orgs', input)
     return org
   }
   async updateOrg(ref: string, input: { name?: string; slug?: string }): Promise<Organization> {
-    const { org } = await this.api<{ org: Organization }>('PATCH', `/v1/orgs/${ref}`, input)
+    const { org } = await this.api<{ org: Organization }>('PATCH', `/orgs/${ref}`, input)
     return org
   }
   async deleteOrg(ref: string): Promise<void> {
-    await this.api('DELETE', `/v1/orgs/${ref}`)
+    await this.api('DELETE', `/orgs/${ref}`)
   }
   async setOrgMetadata(ref: string, patch: Record<string, unknown>): Promise<void> {
-    await this.api('PATCH', `/v1/orgs/${ref}/metadata`, patch)
+    await this.api('PATCH', `/orgs/${ref}/metadata`, patch)
   }
   async deleteOrgMetadataKey(ref: string, key: string): Promise<void> {
-    await this.api('DELETE', `/v1/orgs/${ref}/metadata/${key}`)
+    await this.api('DELETE', `/orgs/${ref}/metadata/${key}`)
   }
 
   // ── memberships ───────────────────────────────────────────────────────────
 
   async listMembers(ref: string): Promise<Membership[]> {
-    const { members } = await this.api<{ members: Membership[] }>('GET', `/v1/orgs/${ref}/members`)
+    const { members } = await this.api<{ members: Membership[] }>('GET', `/orgs/${ref}/members`)
     return members
   }
   async addMember(ref: string, input: { user_id: string; role: Role }): Promise<Membership> {
-    const { member } = await this.api<{ member: Membership }>('POST', `/v1/orgs/${ref}/members`, input)
+    const { member } = await this.api<{ member: Membership }>('POST', `/orgs/${ref}/members`, input)
     return member
   }
   /** Change a member's role. 404 if they are not a member; adding is `addMember`. */
@@ -178,28 +190,28 @@ export class OrgClient {
   }
 
   async removeMember(ref: string, userId: string): Promise<void> {
-    await this.api('DELETE', `/v1/orgs/${ref}/members/${userId}`)
+    await this.api('DELETE', `/orgs/${ref}/members/${userId}`)
   }
 
   // ── invitations ─────────────────────────────────────────────────────────────
 
   /** Pending invitations for an org (owner/admin). */
   async listInvitations(ref: string): Promise<Invitation[]> {
-    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', `/v1/orgs/${ref}/invitations`)
+    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', `/orgs/${ref}/invitations`)
     return invitations
   }
   /** Invite an email to an org with a role (owner/admin). Idempotent per email. */
   async createInvitation(ref: string, input: { email: string; role: Role }): Promise<Invitation> {
-    const { invitation } = await this.api<{ invitation: Invitation }>('POST', `/v1/orgs/${ref}/invitations`, input)
+    const { invitation } = await this.api<{ invitation: Invitation }>('POST', `/orgs/${ref}/invitations`, input)
     return invitation
   }
   /** Revoke a pending invitation (owner/admin). */
   async revokeInvitation(ref: string, id: string): Promise<void> {
-    await this.api('DELETE', `/v1/orgs/${ref}/invitations/${id}`)
+    await this.api('DELETE', `/orgs/${ref}/invitations/${id}`)
   }
   /** The caller's own pending invitations, matched on their token email claim. */
   async listMyInvitations(): Promise<Invitation[]> {
-    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', '/v1/invitations')
+    const { invitations } = await this.api<{ invitations: Invitation[] }>('GET', '/invitations')
     return invitations
   }
   /** Accept an invitation addressed to the caller's email → become a member. */
@@ -209,34 +221,34 @@ export class OrgClient {
   }
 
   async acceptInvitation(id: string): Promise<Membership> {
-    const { member } = await this.api<{ member: Membership }>('POST', `/v1/invitations/${id}/accept`, {})
+    const { member } = await this.api<{ member: Membership }>('POST', `/invitations/${id}/accept`, {})
     return member
   }
 
   // ── scopes (workspaces / projects / environments) ──────────────────────────
 
   async listWorkspaces(orgRef: string): Promise<Scope[]> {
-    const { workspaces } = await this.api<{ workspaces: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces`)
+    const { workspaces } = await this.api<{ workspaces: Scope[] }>('GET', `/orgs/${orgRef}/workspaces`)
     return workspaces
   }
   async createWorkspace(orgRef: string, input: { name: string; slug?: string }): Promise<Scope> {
-    const { workspace } = await this.api<{ workspace: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces`, input)
+    const { workspace } = await this.api<{ workspace: Scope }>('POST', `/orgs/${orgRef}/workspaces`, input)
     return workspace
   }
   async listProjects(orgRef: string, wsRef: string): Promise<Scope[]> {
-    const { projects } = await this.api<{ projects: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects`)
+    const { projects } = await this.api<{ projects: Scope[] }>('GET', `/orgs/${orgRef}/workspaces/${wsRef}/projects`)
     return projects
   }
   async createProject(orgRef: string, wsRef: string, input: { name: string; slug?: string }): Promise<Scope> {
-    const { project } = await this.api<{ project: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects`, input)
+    const { project } = await this.api<{ project: Scope }>('POST', `/orgs/${orgRef}/workspaces/${wsRef}/projects`, input)
     return project
   }
   async listEnvironments(orgRef: string, wsRef: string, projRef: string): Promise<Scope[]> {
-    const { envs } = await this.api<{ envs: Scope[] }>('GET', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`)
+    const { envs } = await this.api<{ envs: Scope[] }>('GET', `/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`)
     return envs
   }
   async createEnvironment(orgRef: string, wsRef: string, projRef: string, input: { name: string; slug?: string }): Promise<Scope> {
-    const { env } = await this.api<{ env: Scope }>('POST', `/v1/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`, input)
+    const { env } = await this.api<{ env: Scope }>('POST', `/orgs/${orgRef}/workspaces/${wsRef}/projects/${projRef}/envs`, input)
     return env
   }
 

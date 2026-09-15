@@ -82,7 +82,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
   const cli = deps.cliName ?? 'cli';
 
   const listOrgs = async (opts: { output: string }) => {
-    const res = await http.get<{ orgs: OrgMeta[] }>('/v1/orgs').catch(e => { console.error(e.message); process.exit(1); });
+    const res = await http.get<{ orgs: OrgMeta[] }>('/orgs').catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.orgs, opts.output, (wide) => {
       table(res.orgs, [
         { key: 'short_id', label: 'ID' },
@@ -116,7 +116,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .requiredOption('--name <name>', 'Display name')
       .option('--slug <slug>', 'URL slug (auto-generated if omitted)')
       .action(async (opts: { name: string; slug?: string }) => {
-        const res = await http.post<{ org: OrgRow }>('/v1/orgs', { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.post<{ org: OrgRow }>('/orgs', { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Org created: ${res.org.slug}`);
         kv([['id', res.org.short_id], ['slug', res.org.slug]]);
       }),
@@ -127,7 +127,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .description('Get org details')
       .option(...outputOption())
       .action(async (slug: string, opts: { output: string }) => {
-        const res  = await http.get<{ org: OrgMeta }>(`/v1/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
+        const res  = await http.get<{ org: OrgMeta }>(`/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
         const meta = res.org.metadata ?? {};
         printOutput(res.org as unknown as Record<string, unknown>, opts.output, () => {
           kv([['id', res.org.short_id], ['slug', res.org.slug], ['name', res.org.name], ['full_id', res.org.id]]);
@@ -149,7 +149,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         const body: Record<string, string> = {};
         if (opts.name) body['name'] = opts.name;
         if (opts.slug) body['slug'] = opts.slug;
-        const res = await http.patch<{ org: OrgRow }>(`/v1/orgs/${slug}`, body).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.patch<{ org: OrgRow }>(`/orgs/${slug}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Org updated.');
         kv([['id', res.org.short_id], ['slug', res.org.slug], ['name', res.org.name]]);
       }),
@@ -159,7 +159,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     new Command('delete').argument('<slug>')
       .description('Delete an organization')
       .action(async (slug: string) => {
-        await http.del(`/v1/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Org deleted: ${slug}`);
       }),
   );
@@ -171,7 +171,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     new Command('get').argument('<slug>').argument('[key]')
       .description('Show metadata (all or one key)')
       .action(async (slug: string, key?: string) => {
-        const res  = await http.get<{ org: OrgMeta }>(`/v1/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
+        const res  = await http.get<{ org: OrgMeta }>(`/orgs/${slug}`).catch(e => { console.error(e.message); process.exit(1); });
         const m    = res.org.metadata ?? {};
         if (key) {
           const val = m[key];
@@ -191,7 +191,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .action(async (slug: string, key: string, value: string) => {
         let parsed: unknown;
         try { parsed = JSON.parse(value); } catch { parsed = value; }
-        await http.patch(`/v1/orgs/${slug}/metadata`, { [key]: parsed }).catch(e => { console.error(e.message); process.exit(1); });
+        await http.patch(`/orgs/${slug}/metadata`, { [key]: parsed }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Metadata key '${key}' set.`);
       }),
   );
@@ -200,7 +200,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     new Command('delete-key').argument('<slug>').argument('<key>')
       .description('Remove a metadata key')
       .action(async (slug: string, key: string) => {
-        await http.del(`/v1/orgs/${slug}/metadata/${key}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${slug}/metadata/${key}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Metadata key '${key}' deleted.`);
       }),
   );
@@ -213,7 +213,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
   // flect org members rm  <uid>  → remove a member
   const listMembers = async (opts: { org?: string; output: string }) => {
     const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-    const res     = await http.get<{ members: Membership[] }>(`/v1/orgs/${orgSlug}/members`).catch(e => { console.error(e.message); process.exit(1); });
+    const res     = await http.get<{ members: Membership[] }>(`/orgs/${orgSlug}/members`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.members, opts.output, (wide) => {
       table(res.members, [
         // The service joins in who the person is when the realm has an iam; a
@@ -254,7 +254,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (userId: string, opts: { role: string; org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.post(`/v1/orgs/${orgSlug}/members`, { user_id: userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
+        await http.post(`/orgs/${orgSlug}/members`, { user_id: userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Member added: ${userId} (${opts.role})`);
       }),
   );
@@ -265,7 +265,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (userId: string, role: string, opts: { org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.patch(`/v1/orgs/${orgSlug}/members/${userId}`, { role })
+        await http.patch(`/orgs/${orgSlug}/members/${userId}`, { role })
           .catch(e => { console.error(e.message); process.exit(1); });
         success(`Role changed: ${userId} → ${role}`);
       }),
@@ -277,7 +277,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (userId: string, opts: { org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.del(`/v1/orgs/${orgSlug}/members/${userId}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${orgSlug}/members/${userId}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Member removed: ${userId}`);
       }),
   );
@@ -293,7 +293,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (email: string, opts: { role: string; org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        const res = await http.post<{ invitation: Invitation }>(`/v1/orgs/${orgSlug}/invitations`, { email, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.post<{ invitation: Invitation }>(`/orgs/${orgSlug}/invitations`, { email, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Invitation sent to ${res.invitation.email} (${res.invitation.role})`);
         kv([['id', res.invitation.id], ['email', res.invitation.email], ['role', res.invitation.role]]);
       }),
@@ -304,7 +304,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
   // flect org invites revoke <id>
   const listOrgInvites = async (opts: { org?: string; output: string }) => {
     const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-    const res     = await http.get<{ invitations: Invitation[] }>(`/v1/orgs/${orgSlug}/invitations`).catch(e => { console.error(e.message); process.exit(1); });
+    const res     = await http.get<{ invitations: Invitation[] }>(`/orgs/${orgSlug}/invitations`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.invitations, opts.output, (wide) => {
       table(res.invitations, [
         { key: 'email',     label: 'EMAIL' },
@@ -338,7 +338,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (id: string, opts: { org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.del(`/v1/orgs/${orgSlug}/invitations/${id}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${orgSlug}/invitations/${id}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Invitation revoked: ${id}`);
       }),
   );
@@ -356,7 +356,7 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
   const cli = deps.cliName ?? 'cli';
 
   const listMine = async (opts: { output: string }) => {
-    const res = await http.get<{ invitations: Invitation[] }>('/v1/invitations').catch(e => { console.error(e.message); process.exit(1); });
+    const res = await http.get<{ invitations: Invitation[] }>('/invitations').catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.invitations, opts.output, (wide) => {
       table(res.invitations, [
         { key: 'orgName',   label: 'ORG' },
@@ -387,7 +387,7 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
     new Command('accept').argument('<id>')
       .description('Accept an invitation and join the org')
       .action(async (id: string) => {
-        const res = await http.post<{ member: Membership }>(`/v1/invitations/${id}/accept`, {}).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.post<{ member: Membership }>(`/invitations/${id}/accept`, {}).catch(e => { console.error(e.message); process.exit(1); });
         success(`Joined org as ${res.member.role}.`);
         kv([['org_id', res.member.org_id], ['role', res.member.role]]);
       }),
@@ -397,7 +397,7 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
     new Command('decline').argument('<id>')
       .description('Decline an invitation addressed to you')
       .action(async (id: string) => {
-        await http.post(`/v1/invitations/${id}/decline`, {}).catch(e => { console.error(e.message); process.exit(1); });
+        await http.post(`/invitations/${id}/decline`, {}).catch(e => { console.error(e.message); process.exit(1); });
         success('Invitation declined.');
       }),
   );
@@ -416,7 +416,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
 
   const listWs = async (opts: { org?: string; output: string }) => {
     const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-    const res     = await http.get<{ workspaces: WsRow[] }>(`/v1/orgs/${orgSlug}/workspaces`).catch(e => { console.error(e.message); process.exit(1); });
+    const res     = await http.get<{ workspaces: WsRow[] }>(`/orgs/${orgSlug}/workspaces`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.workspaces, opts.output, (wide) => {
       table(res.workspaces, [
         { key: 'short_id',   label: 'ID' },
@@ -453,7 +453,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (opts: { name: string; slug?: string; org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        const res     = await http.post<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
+        const res     = await http.post<{ workspace: WsRow }>(`/orgs/${orgSlug}/workspaces`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Workspace created: ${res.workspace.slug}`);
         kv([['id', res.workspace.short_id], ['slug', res.workspace.slug]]);
       }),
@@ -466,7 +466,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
       .option(...outputOption())
       .action(async (ref: string, opts: { org?: string; output: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        const res = await http.get<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.get<{ workspace: WsRow }>(`/orgs/${orgSlug}/workspaces/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         printOutput(res.workspace as unknown as Record<string, unknown>, opts.output, () => {
           kv([['id', res.workspace.short_id], ['slug', res.workspace.slug], ['name', res.workspace.name], ['full_id', res.workspace.id]]);
         }, 'slug');
@@ -485,7 +485,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
         const body: Record<string, string> = {};
         if (opts.name) body['name'] = opts.name;
         if (opts.slug) body['slug'] = opts.slug;
-        const res = await http.patch<{ workspace: WsRow }>(`/v1/orgs/${orgSlug}/workspaces/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.patch<{ workspace: WsRow }>(`/orgs/${orgSlug}/workspaces/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Workspace updated.');
         kv([['id', res.workspace.short_id], ['slug', res.workspace.slug], ['name', res.workspace.name]]);
       }),
@@ -497,7 +497,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
       .option('--org <slug>', 'Override active org')
       .action(async (ref: string, opts: { org?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
-        await http.del(`/v1/orgs/${orgSlug}/workspaces/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${orgSlug}/workspaces/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Workspace deleted: ${ref}`);
       }),
   );
@@ -517,7 +517,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
   const listProj = async (opts: { org?: string; ws?: string; output: string }) => {
     const orgSlug = activeOrgSlug(ctx, cli, opts.org);
     const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
-    const res     = await http.get<{ projects: ProjRow[] }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects`).catch(e => { console.error(e.message); process.exit(1); });
+    const res     = await http.get<{ projects: ProjRow[] }>(`/orgs/${orgSlug}/workspaces/${wsSlug}/projects`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.projects, opts.output, (wide) => {
       table(res.projects, [
         { key: 'short_id',   label: 'ID' },
@@ -558,7 +558,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
       .action(async (opts: { name: string; slug?: string; org?: string; ws?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
-        const res     = await http.post<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
+        const res     = await http.post<{ project: ProjRow }>(`/orgs/${orgSlug}/workspaces/${wsSlug}/projects`, { name: opts.name, slug: opts.slug }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Project created: ${res.project.slug}`);
         kv([['id', res.project.short_id], ['slug', res.project.slug]]);
       }),
@@ -573,7 +573,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
       .action(async (ref: string, opts: { org?: string; ws?: string; output: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
-        const res = await http.get<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.get<{ project: ProjRow }>(`/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         printOutput(res.project as unknown as Record<string, unknown>, opts.output, () => {
           kv([['id', res.project.short_id], ['slug', res.project.slug], ['name', res.project.name], ['full_id', res.project.id]]);
         }, 'slug');
@@ -596,7 +596,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
         if (opts.name) body['name'] = opts.name;
         if (opts.slug) body['slug'] = opts.slug;
         if (opts.default) body['is_default'] = true;
-        const res = await http.patch<{ project: ProjRow }>(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
+        const res = await http.patch<{ project: ProjRow }>(`/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`, body).catch(e => { console.error(e.message); process.exit(1); });
         success('Project updated.');
         kv([['id', res.project.short_id], ['slug', res.project.slug], ['name', res.project.name], ['default', res.project.is_default ? '✓' : '']]);
       }),
@@ -610,7 +610,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
       .action(async (ref: string, opts: { org?: string; ws?: string }) => {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         const wsSlug  = activeWsSlug(ctx, cli, opts.ws);
-        await http.del(`/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
+        await http.del(`/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${ref}`).catch(e => { console.error(e.message); process.exit(1); });
         success(`Project deleted: ${ref}`);
       }),
   );
@@ -630,7 +630,7 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
   const cli = deps.cliName ?? 'cli';
 
   function basePath(orgSlug: string, wsSlug: string, projSlug: string) {
-    return `/v1/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${projSlug}/envs`;
+    return `/orgs/${orgSlug}/workspaces/${wsSlug}/projects/${projSlug}/envs`;
   }
 
   const listEnv = async (opts: { org?: string; ws?: string; proj?: string; output: string }) => {
@@ -775,19 +775,19 @@ export function addGlobalCommands(program: Command, deps: OrgCliDeps): void {
         const activeWs   = ctxData?.['workspace'];
         const activeProj = ctxData?.['project'];
 
-        const { orgs } = await http.get<{ orgs: OrgRow[] }>('/v1/orgs').catch(e => { console.error(e.message); process.exit(1); });
+        const { orgs } = await http.get<{ orgs: OrgRow[] }>('/orgs').catch(e => { console.error(e.message); process.exit(1); });
 
         let totalWs   = 0;
         let totalProj = 0;
 
         const nodes: TreeNode[] = await Promise.all(
           orgs.map(async (org) => {
-            const { workspaces } = await http.get<{ workspaces: WsRow[] }>(`/v1/orgs/${org.slug}/workspaces`);
+            const { workspaces } = await http.get<{ workspaces: WsRow[] }>(`/orgs/${org.slug}/workspaces`);
             totalWs += workspaces.length;
 
             const wsNodes: TreeNode[] = await Promise.all(
               workspaces.map(async (ws) => {
-                const { projects } = await http.get<{ projects: ProjRow[] }>(`/v1/orgs/${org.slug}/workspaces/${ws.slug}/projects`);
+                const { projects } = await http.get<{ projects: ProjRow[] }>(`/orgs/${org.slug}/workspaces/${ws.slug}/projects`);
                 totalProj += projects.length;
                 const isActiveWs = org.slug === activeOrg && ws.slug === activeWs;
                 return {
@@ -976,12 +976,12 @@ async function runUseCommand(
   if (orgHint) {
     orgSlug = orgHint;
   } else {
-    const { orgs } = await http.get<{ orgs: OrgRow[] }>('/v1/orgs').catch(e => { console.error(e.message); process.exit(1); });
+    const { orgs } = await http.get<{ orgs: OrgRow[] }>('/orgs').catch(e => { console.error(e.message); process.exit(1); });
     const org = await pick('org', orgs);
     orgSlug = org.slug;
   }
 
-  const orgRes = await http.get<{ org: OrgRow }>(`/v1/orgs/${orgSlug}`)
+  const orgRes = await http.get<{ org: OrgRow }>(`/orgs/${orgSlug}`)
     .catch(() => fatal(`Org not found: ${orgSlug}`));
 
   if (parts.length <= 1 && orgHint) {
@@ -992,7 +992,7 @@ async function runUseCommand(
     return;
   }
 
-  const { workspaces } = await http.get<{ workspaces: WsRow[] }>(`/v1/orgs/${orgSlug}/workspaces`).catch(e => { console.error(e.message); process.exit(1); });
+  const { workspaces } = await http.get<{ workspaces: WsRow[] }>(`/orgs/${orgSlug}/workspaces`).catch(e => { console.error(e.message); process.exit(1); });
   const ws = wsHint
     ? (workspaces.find(w => w.slug === wsHint) ?? fatal(`Workspace not found: ${wsHint}`))
     : (workspaces.length === 1 ? workspaces[0]! : await pick('workspace', workspaces));
@@ -1006,13 +1006,13 @@ async function runUseCommand(
     return;
   }
 
-  const projRes = await http.get<{ projects: ProjRow[] }>(`/v1/orgs/${orgSlug}/workspaces/${ws!.slug}/projects`).catch(e => { console.error(e.message); process.exit(1); });
+  const projRes = await http.get<{ projects: ProjRow[] }>(`/orgs/${orgSlug}/workspaces/${ws!.slug}/projects`).catch(e => { console.error(e.message); process.exit(1); });
   const { projects } = projRes!;
   const proj = projHint
     ? (projects.find(p => p.slug === projHint) ?? fatal(`Project not found: ${projHint}`))
     : (projects.length === 1 ? projects[0]! : await pick('project', projects));
 
-  const envBase = `/v1/orgs/${orgSlug}/workspaces/${ws!.slug}/projects/${proj!.slug}/envs`;
+  const envBase = `/orgs/${orgSlug}/workspaces/${ws!.slug}/projects/${proj!.slug}/envs`;
   const envRes = await http.get<{ envs: EnvRow[] }>(envBase).catch(e => { console.error(e.message); process.exit(1); });
   let { envs } = envRes;
 

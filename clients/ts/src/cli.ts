@@ -21,7 +21,11 @@ type OrgMeta = OrgRow & { metadata?: Record<string, unknown> };
 type WsRow   = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
 type ProjRow = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
 type EnvRow  = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
-type Membership = { id: string; org_id: string; user_id: string; role: string; created_at: number; updated_at: number };
+// The real one, not a copy: a second definition here went stale the moment the
+// service started joining in the member's email and name. Mapped rather than
+// aliased, because the table helpers take a `Record<string, unknown>` and an
+// interface has no implicit index signature.
+type Membership = { [K in keyof import('./types.js').Membership]: import('./types.js').Membership[K] };
 type Invitation = { id: string; org_id: string; email: string; role: string; invited_by: string; created_at: number; updated_at: number; org_slug?: string; org_name?: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,8 +216,14 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
     const res     = await http.get<{ members: Membership[] }>(`/v1/orgs/${orgSlug}/members`).catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.members, opts.output, (wide) => {
       table(res.members, [
-        { key: 'user_id',   label: 'USER ID' },
+        // The service joins in who the person is when the realm has an iam; a
+        // list of opaque ids is a list nobody can act on. The id stays as the
+        // fallback, and in the wide view regardless — it is what `add` and `rm`
+        // take.
+        { key: 'email',     label: 'MEMBER', fmt: (v, row) => (v as string) || row.name || row.user_id },
+        { key: 'name',      label: 'NAME', fmt: v => (v as string) ?? '—' },
         { key: 'role',      label: 'ROLE' },
+        { key: 'user_id',   label: 'USER ID', wide: true },
         { key: 'created_at', label: 'JOINED', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'FULL ID', wide: true },
       ] as ColDef<Membership>[], { wide, emptyHint: `No members yet.` } as TableOpts & { wide: boolean });
@@ -246,6 +256,18 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         const orgSlug = activeOrgSlug(ctx, cli, opts.org);
         await http.post(`/v1/orgs/${orgSlug}/members`, { user_id: userId, role: opts.role }).catch(e => { console.error(e.message); process.exit(1); });
         success(`Member added: ${userId} (${opts.role})`);
+      }),
+  );
+
+  members.addCommand(
+    new Command('role').argument('<userId>').argument('<role>')
+      .description('Change a member\'s role (owner | admin | member | viewer)')
+      .option('--org <slug>', 'Override active org')
+      .action(async (userId: string, role: string, opts: { org?: string }) => {
+        const orgSlug = activeOrgSlug(ctx, cli, opts.org);
+        await http.patch(`/v1/orgs/${orgSlug}/members/${userId}`, { role })
+          .catch(e => { console.error(e.message); process.exit(1); });
+        success(`Role changed: ${userId} → ${role}`);
       }),
   );
 
@@ -368,6 +390,15 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
         const res = await http.post<{ member: Membership }>(`/v1/invitations/${id}/accept`, {}).catch(e => { console.error(e.message); process.exit(1); });
         success(`Joined org as ${res.member.role}.`);
         kv([['org_id', res.member.org_id], ['role', res.member.role]]);
+      }),
+  );
+
+  cmd.addCommand(
+    new Command('decline').argument('<id>')
+      .description('Decline an invitation addressed to you')
+      .action(async (id: string) => {
+        await http.post(`/v1/invitations/${id}/decline`, {}).catch(e => { console.error(e.message); process.exit(1); });
+        success('Invitation declined.');
       }),
   );
 

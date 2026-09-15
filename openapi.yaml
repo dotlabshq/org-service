@@ -271,13 +271,51 @@ paths:
     parameters:
       - { name: ref, in: path, required: true, schema: { type: string } }
       - { name: userId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [members]
+      summary: Change a member's role
+      description: |
+        Owner or admin. Sending this for somebody who is not a member answers
+        `404` rather than enrolling them: adding and re-grading are different
+        decisions, and an admin who mistypes a user id should be told.
+
+        Refused with `409 last_owner` when it would demote the only owner — see
+        the note on DELETE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  member: { $ref: "#/components/schemas/Membership" }
+        "403": { description: Not permitted }
+        "404": { description: Not a member of this organization }
+        "409": { description: last_owner }
     delete:
       tags: [members]
       summary: Remove a member
-      description: Same rule as adding one.
+      description: |
+        Same rule as adding one.
+
+        Refused with `409 last_owner` when it would leave the organization with
+        no owner. Owner is the only role that can grant owner, so an org that
+        loses its last one is locked: nobody remaining can invite, promote or
+        delete it.
       responses:
         "200": { description: ok }
         "403": { description: Not permitted }
+        "409": { description: last_owner }
 
   /orgs/{ref}/invitations:
     parameters:
@@ -393,6 +431,24 @@ paths:
                 type: object
                 properties:
                   member: { $ref: "#/components/schemas/Membership" }
+        "404": { description: No such invitation for this caller }
+        "409": { description: email_unavailable, or no_email }
+
+  /invitations/{id}/decline:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [invitations]
+      summary: Decline an invitation addressed to you
+      description: |
+        Checked against the caller's own email, exactly as accepting is.
+
+        Not the same as the organization revoking it (`DELETE
+        /orgs/{ref}/invitations/{id}`). Both remove the pending row, and the log
+        keeps which of the two happened: the person refused, or the offer was
+        withdrawn.
+      responses:
+        "200": { description: ok }
         "404": { description: No such invitation for this caller }
         "409": { description: email_unavailable, or no_email }
 
@@ -637,6 +693,15 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         created_at: { type: integer }
         updated_at: { type: integer }
+        email:
+          type: string
+          description: |
+            Joined from iam-service on listings. Absent when the realm runs
+            without iam, or when iam does not know this id — never that the
+            person has no address.
+        name:
+          type: string
+          description: As above.
 
     ServiceManifest:
       type: object

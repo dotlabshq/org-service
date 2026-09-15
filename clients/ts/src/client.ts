@@ -169,6 +169,14 @@ export class OrgClient {
     const { member } = await this.api<{ member: Membership }>('POST', `/v1/orgs/${ref}/members`, input)
     return member
   }
+  /** Change a member's role. 404 if they are not a member; adding is `addMember`. */
+  async changeMemberRole(ref: string, userId: string, role: Role): Promise<Membership> {
+    const { member } = await this.api<{ member: Membership }>(
+      'PATCH', `/orgs/${encodeURIComponent(ref)}/members/${encodeURIComponent(userId)}`, { role },
+    )
+    return member
+  }
+
   async removeMember(ref: string, userId: string): Promise<void> {
     await this.api('DELETE', `/v1/orgs/${ref}/members/${userId}`)
   }
@@ -195,6 +203,11 @@ export class OrgClient {
     return invitations
   }
   /** Accept an invitation addressed to the caller's email → become a member. */
+  /** Refuse an invitation addressed to you. Not the same as the org revoking it. */
+  async declineInvitation(id: string): Promise<void> {
+    await this.api('POST', `/invitations/${encodeURIComponent(id)}/decline`, {})
+  }
+
   async acceptInvitation(id: string): Promise<Membership> {
     const { member } = await this.api<{ member: Membership }>('POST', `/v1/invitations/${id}/accept`, {})
     return member

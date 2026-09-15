@@ -106,6 +106,13 @@ export interface Membership {
   role: Role
   created_at: number
   updated_at: number
+  /**
+   * Who the member is, joined from iam-service when a realm has one. Absent
+   * means the realm runs without iam, or iam does not know this id (a deleted
+   * account) — never that the person has no email.
+   */
+  email?: string
+  name?: string
 }
 
 export interface Invitation {
@@ -113,7 +120,10 @@ export interface Invitation {
   org_id: string
   email: string
   role: Role
+  /** The inviter's user id. Readable forms below, when iam can supply them. */
   invited_by: string
+  invited_by_email?: string
+  invited_by_name?: string
   created_at: number
   updated_at: number
   // Enriched on the invitee-facing list (`GET /invitations`) so a client can

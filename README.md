@@ -189,11 +189,32 @@ customer list.
   email_unavailable` rather than an empty list — "you have no invitations" would
   be a lie when the truth is "this service cannot tell".
 - **No expiry on invitations.** A pending invitation stays valid until it is
-  accepted or revoked.
+  accepted, declined or revoked.
 - **No pagination.** `listOrgs`, `listMembers` and `/all-orgs` return
   everything. Fine at current sizes, not forever.
-- **Last-owner protection is not enforced.** Nothing stops the final `owner`
-  from being removed, leaving an organisation nobody can administer.
+
+## An organisation always keeps an owner
+
+Owner is the only role that can grant owner, so an organisation that loses its
+last one is locked: nobody remaining can invite, promote, or delete it. Every
+path that could do it answers `409 last_owner` — removing that member, changing
+their role, and `POST /members`, which re-grades somebody who is already in and
+would otherwise be the same act by another door.
+
+The rule lives in the store rather than in the routes, because that is the one
+place all three of them pass through.
+
+## Who a member is
+
+`GET /orgs/{ref}/members` carries `email` and `name` alongside the role. The
+membership is what this service owns; the person is iam's, and copying an
+address here would mean holding one that goes stale the moment somebody changes
+it. So the two are joined on the way out, in one batch call to iam's
+`/users/resolve` rather than one call per member.
+
+It is an enrichment, never a requirement. Without `IAM_SERVICE_URL`, or with
+iam unreachable, the list is the same list without the names — losing the roles
+and the count because the names are unavailable would be the wrong trade.
 
 ## Development
 

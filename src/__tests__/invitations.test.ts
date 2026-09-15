@@ -183,3 +183,61 @@ async function pendingId(): Promise<string> {
   )
   return invitations[0]!.id
 }
+
+// ── declining ───────────────────────────────────────────────────────────────
+//
+// Declining is the invitee refusing. It is not the organisation revoking, and
+// the difference has to survive into the log: "did they say no, or did we
+// change our mind?" is a question somebody asks later.
+
+describe('declining an invitation', () => {
+  it('the invitee declines and the invitation is gone for both sides', async () => {
+    await acme()
+    const { body } = await invite()
+
+    const res = await app.post(`/invitations/${body.invitation.id}/decline`, {}, invitee())
+    expect(res.status).toBe(200)
+
+    // Gone from the invitee's own list…
+    const mine = await json<{ invitations: Invitation[] }>(await app.get('/invitations', invitee()))
+    expect(mine.invitations).toHaveLength(0)
+
+    // …and from the organisation's pending list.
+    const theirs = await json<{ invitations: Invitation[] }>(
+      await app.get('/orgs/acme/invitations', makeToken(USER_ID, INVITER_EMAIL)),
+    )
+    expect(theirs.invitations).toHaveLength(0)
+  })
+
+  it('declining does not make anyone a member', async () => {
+    await acme()
+    const { body } = await invite()
+    await app.post(`/invitations/${body.invitation.id}/decline`, {}, invitee())
+
+    const { members } = await json<{ members: { user_id: string }[] }>(
+      await app.get('/orgs/acme/members', makeToken(USER_ID, INVITER_EMAIL)),
+    )
+    expect(members.map((m) => m.user_id)).toEqual([USER_ID])
+  })
+
+  it('somebody else cannot decline an invitation addressed to you', async () => {
+    await acme()
+    const { body } = await invite()
+
+    const res = await app.post(`/invitations/${body.invitation.id}/decline`, {}, makeToken('usr_other', 'other@example.com'))
+    // 404, not 403: a 403 would confirm the id is real to whoever guessed it.
+    expect(res.status).toBe(404)
+
+    const mine = await json<{ invitations: Invitation[] }>(await app.get('/invitations', invitee()))
+    expect(mine.invitations).toHaveLength(1)
+  })
+
+  it('a declined invitation cannot then be accepted', async () => {
+    await acme()
+    const { body } = await invite()
+    await app.post(`/invitations/${body.invitation.id}/decline`, {}, invitee())
+
+    const res = await app.post(`/invitations/${body.invitation.id}/accept`, {}, invitee())
+    expect(res.status).toBe(404)
+  })
+})

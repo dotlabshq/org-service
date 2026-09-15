@@ -5,6 +5,7 @@ import { requireAuth } from '../lib/auth.js'
 import { StoreError, type Store } from '../store.js'
 import { Role } from '@baseworks/org/events'
 import { callerEmail, EmailUnavailable, StoreNotFound } from '../lib/caller-email.js'
+import { profilesFor } from '../lib/identity.js'
 
 const slug = z.string().min(1).regex(/^[a-z0-9-]+$/)
 
@@ -130,10 +131,23 @@ export function orgsRouter(store: Store) {
 
   // ── members ─────────────────────────────────────────────────────────────────
 
+  /**
+   * The org's members, with names where iam can supply them.
+   *
+   * The membership is what this service owns; the person is iam's. They are
+   * joined here rather than by the caller because iam's user endpoints are not
+   * published on the gateway — and because one batch call beats one call per
+   * member. Without iam configured the list is the same list, without names.
+   */
   app.get('/orgs/:ref/members', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin', 'member', 'viewer'])
-    return c.json({ members: await store.listMembers(orgId) })
+    const members = await store.listMembers(orgId)
+    const bearer = (c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const profiles = await profilesFor(members.map((m) => m.user_id), bearer)
+    return c.json({
+      members: members.map((m) => ({ ...m, ...(profiles.get(m.user_id) ?? {}) })),
+    })
   })
 
   /**
@@ -164,6 +178,26 @@ export function orgsRouter(store: Store) {
     return c.json({ member }, 201)
   })
 
+  /**
+   * Change a member's role.
+   *
+   * Separate from POST, which adds. Sending this for somebody who is not a
+   * member answers 404 instead of quietly enrolling them: the two are different
+   * decisions and an admin who mistypes a user id should be told so.
+   */
+  app.patch(
+    '/orgs/:ref/members/:userId',
+    zValidator('json', z.object({ role: Role })),
+    async (c) => {
+      const auth = c.get('auth')
+      const { orgId } = await orgForMembershipWrite(c, auth)
+      const member = await store
+        .changeMemberRole(orgId, c.req.param('userId'), c.req.valid('json').role, auth.userId)
+        .catch(fail)
+      return c.json({ member })
+    },
+  )
+
   app.delete('/orgs/:ref/members/:userId', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await orgForMembershipWrite(c, auth)
@@ -189,10 +223,30 @@ export function orgsRouter(store: Store) {
     }
   }
 
+  /**
+   * `invited_by` is a user id, which is the truth but not readable. Resolved the
+   * same way members are, so a pending list says who sent it.
+   */
+  async function withInviter<T extends { invited_by: string }>(
+    rows: T[],
+    c: { req: { header: (k: string) => string | undefined } },
+  ): Promise<(T & { invited_by_email?: string; invited_by_name?: string })[]> {
+    const bearer = (c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const profiles = await profilesFor(rows.map((r) => r.invited_by), bearer)
+    return rows.map((r) => {
+      const p = profiles.get(r.invited_by)
+      return {
+        ...r,
+        ...(p?.email ? { invited_by_email: p.email } : {}),
+        ...(p?.name ? { invited_by_name: p.name } : {}),
+      }
+    })
+  }
+
   app.get('/orgs/:ref/invitations', async (c) => {
     const auth = c.get('auth')
     const { orgId } = await requireOrg(c.req.param('ref'), auth.userId, ['owner', 'admin'])
-    return c.json({ invitations: await store.listInvitations(orgId) })
+    return c.json({ invitations: await withInviter(await store.listInvitations(orgId), c) })
   })
 
   app.post(
@@ -220,7 +274,9 @@ export function orgsRouter(store: Store) {
   app.get('/invitations', async (c) => {
     const auth = c.get('auth')
     const email = await emailOf(c, auth)
-    return c.json({ invitations: await store.listInvitationsForEmail(email) })
+    // "Somebody invited you" is not an invitation anyone can act on. The org's
+    // name comes from the store; who sent it is resolved here.
+    return c.json({ invitations: await withInviter(await store.listInvitationsForEmail(email), c) })
   })
 
   /**
@@ -236,6 +292,19 @@ export function orgsRouter(store: Store) {
     const email = await emailOf(c, auth)
     const member = await store.acceptInvitation(c.req.param('id'), auth.userId, email).catch(fail)
     return c.json({ member }, 201)
+  })
+
+  /**
+   * Decline an invitation — the invitee's own refusal, checked against their
+   * email the same way accepting is. An organisation withdrawing an offer is a
+   * different act with a different endpoint (DELETE on the org's invitation)
+   * and a different event.
+   */
+  app.post('/invitations/:id/decline', async (c) => {
+    const auth = c.get('auth')
+    const email = await emailOf(c, auth)
+    await store.declineInvitation(c.req.param('id'), auth.userId, email).catch(fail)
+    return c.json({ ok: true })
   })
 
   return app

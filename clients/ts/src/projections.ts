@@ -70,9 +70,11 @@ export const readOrgInvitations = defineProjection('org_invitations', Invitation
     invited_by: e.invitedBy,
     created_at: e.at,
   })),
-  // Accepting or revoking removes the pending row; the events remain the audit
-  // trail, and acceptance is mirrored by a MemberAdded on the membership stream.
+  // Accepting, declining or revoking removes the pending row; the events remain
+  // the audit trail, and acceptance is mirrored by a MemberAdded on the
+  // membership stream.
   InvitationAccepted: on.InvitationAccepted.delete(),
+  InvitationDeclined: on.InvitationDeclined.delete(),
   InvitationRevoked: on.InvitationRevoked.delete(),
 }))
 

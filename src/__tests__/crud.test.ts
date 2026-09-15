@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { bootTestFoldBase, makeServiceToken, makeTestApp, makeToken, USER_ID, type TestFoldBase } from './setup.js'
+import { resetIdentityCache } from '../lib/identity.js'
 
 type App = Awaited<ReturnType<typeof makeTestApp>>
 let fb: TestFoldBase
@@ -142,6 +143,75 @@ describe('memberships', () => {
     await app.post('/v1/orgs/acme/members', { user_id: 'viewer1', role: 'viewer' })
     const viewerTok = makeToken('viewer1')
     expect((await app.post('/v1/orgs/acme/members', { user_id: 'u3', role: 'member' }, viewerTok)).status).toBe(403)
+  })
+
+  it('PATCH changes a role and answers with the member', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'member' })
+
+    const res = await app.patch('/v1/orgs/acme/members/u2', { role: 'admin' })
+    expect(res.status).toBe(200)
+    expect((await json<{ member: { role: string } }>(res)).member.role).toBe('admin')
+
+    const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))
+    expect(members.find((m) => m.user_id === 'u2')?.role).toBe('admin')
+  })
+
+  it('PATCH on somebody who is not a member is 404, not an enrolment', async () => {
+    await createOrg()
+    expect((await app.patch('/v1/orgs/acme/members/nobody', { role: 'admin' })).status).toBe(404)
+
+    const { members } = await json<{ members: Array<{ user_id: string }> }>(await app.get('/v1/orgs/acme/members'))
+    expect(members.map((m) => m.user_id)).toEqual([USER_ID])
+  })
+
+  it('a viewer cannot change a role (403)', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'viewer1', role: 'viewer' })
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'member' })
+    expect((await app.patch('/v1/orgs/acme/members/u2', { role: 'admin' }, makeToken('viewer1'))).status).toBe(403)
+  })
+})
+
+// ── the last owner ───────────────────────────────────────────────────────────
+//
+// Owner is the only role that can hand out owner. An org whose last one leaves
+// or is demoted is locked: nobody left can invite, promote or delete it. Every
+// path that could do it is refused, including the one that looks like adding.
+
+describe('an org always keeps an owner', () => {
+  it('the only owner cannot be demoted, by PATCH or by POST', async () => {
+    await createOrg()
+    expect((await app.patch(`/v1/orgs/acme/members/${USER_ID}`, { role: 'admin' })).status).toBe(409)
+    // POST re-points an existing member's role, so it is the same act by another door.
+    expect((await app.post('/v1/orgs/acme/members', { user_id: USER_ID, role: 'admin' })).status).toBe(409)
+
+    const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))
+    expect(members.find((m) => m.user_id === USER_ID)?.role).toBe('owner')
+  })
+
+  it('the only owner cannot be removed', async () => {
+    await createOrg()
+    expect((await app.del(`/v1/orgs/acme/members/${USER_ID}`)).status).toBe(409)
+  })
+
+  it('once there is a second owner, the first can go', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'owner' })
+
+    expect((await app.del(`/v1/orgs/acme/members/${USER_ID}`)).status).toBe(200)
+    const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(
+      await app.get('/v1/orgs/acme/members', makeToken('u2')),
+    )
+    expect(members).toHaveLength(1)
+    expect(members[0]).toMatchObject({ user_id: 'u2', role: 'owner' })
+  })
+
+  it('a non-owner member is not protected by any of this', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'admin' })
+    expect((await app.patch('/v1/orgs/acme/members/u2', { role: 'viewer' })).status).toBe(200)
+    expect((await app.del('/v1/orgs/acme/members/u2')).status).toBe(200)
   })
 })
 
@@ -368,5 +438,93 @@ describe('mount paths', () => {
     await json(await app.post('/orgs', { name: 'Acme', slug: 'acme' }))
     expect((await app.get('/apps')).status).toBe(200)
     expect((await app.get('/v1/apps')).status).toBe(200)
+  })
+})
+
+// ── names on a member list ───────────────────────────────────────────────────
+//
+// A membership is (user, org, role); who that user is belongs to iam. The join
+// happens in this service because iam's user endpoints are not on the gateway,
+// so nobody downstream can make the call. It is an enrichment: without iam the
+// list is the same list, minus the names.
+
+describe('member identity', () => {
+  const realFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    delete process.env['IAM_SERVICE_URL']
+    resetIdentityCache()
+  })
+
+  /** Stand in for iam, and record what it was asked. */
+  function fakeIam(users: Record<string, { email: string; name?: string }>) {
+    const calls: string[][] = []
+    process.env['IAM_SERVICE_URL'] = 'http://iam.test'
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (!url.includes('/users/resolve')) return realFetch(input as never, init)
+      const { ids } = JSON.parse(String(init?.body)) as { ids: string[] }
+      calls.push(ids)
+      return new Response(
+        JSON.stringify({ users: ids.filter((id) => users[id]).map((id) => ({ id, ...users[id] })) }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as typeof fetch
+    return calls
+  }
+
+  it('carries the email and name iam knows', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'u2', role: 'member' })
+    const calls = fakeIam({
+      [USER_ID]: { email: 'owner@acme.test', name: 'Owner' },
+      u2: { email: 'two@acme.test', name: 'Two' },
+    })
+
+    const { members } = await json<{ members: Array<{ user_id: string; email?: string; name?: string }> }>(
+      await app.get('/v1/orgs/acme/members'),
+    )
+    expect(members.find((m) => m.user_id === 'u2')).toMatchObject({ email: 'two@acme.test', name: 'Two' })
+    // One request for the whole list, not one per member.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.sort()).toEqual([USER_ID, 'u2'].sort())
+  })
+
+  it('an id iam does not know still appears, without a name', async () => {
+    await createOrg()
+    await app.post('/v1/orgs/acme/members', { user_id: 'ghost', role: 'member' })
+    fakeIam({ [USER_ID]: { email: 'owner@acme.test' } })
+
+    const { members } = await json<{ members: Array<{ user_id: string; email?: string }> }>(
+      await app.get('/v1/orgs/acme/members'),
+    )
+    const ghost = members.find((m) => m.user_id === 'ghost')
+    expect(ghost).toBeDefined()
+    expect(ghost!.email).toBeUndefined()
+  })
+
+  it('an unreachable iam costs the names, not the list', async () => {
+    await createOrg()
+    process.env['IAM_SERVICE_URL'] = 'http://iam.test'
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/users/resolve')) throw new Error('connection refused')
+      return realFetch(input as never, init)
+    }) as typeof fetch
+
+    const res = await app.get('/v1/orgs/acme/members')
+    expect(res.status).toBe(200)
+    const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(res)
+    expect(members).toHaveLength(1)
+    expect(members[0]).toMatchObject({ user_id: USER_ID, role: 'owner' })
+  })
+
+  it('without iam configured the list is unchanged', async () => {
+    await createOrg()
+    const { members } = await json<{ members: Array<{ user_id: string; email?: string }> }>(
+      await app.get('/v1/orgs/acme/members'),
+    )
+    expect(members).toHaveLength(1)
+    expect(members[0]!.email).toBeUndefined()
   })
 })

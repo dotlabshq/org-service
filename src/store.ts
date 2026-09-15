@@ -227,10 +227,41 @@ export function createStore(fb: FoldBase) {
     return res.rows.map(toMember)
   }
 
+  /**
+   * An organisation must never be left with nobody who can administer it.
+   *
+   * Owner is the only role that can hand out owner, so the last one leaving or
+   * being demoted would lock the org: the remaining members could not invite,
+   * could not promote, and could not delete it. The check is here rather than in
+   * the routes because every path that could do it goes through this file —
+   * removing a member, changing a role, and `addMember`, which quietly changes
+   * the role of someone who is already in.
+   */
+  async function refuseIfLastOwner(orgId: string, userId: string, nextRole: Role | null): Promise<void> {
+    if (nextRole === 'owner') return
+    const current = await roleOf(orgId, userId)
+    if (current !== 'owner') return
+    const owners = await q.query<MemberRow>('org_members', { where: { org_id: { eq: orgId }, role: { eq: 'owner' } } })
+    if (owners.rows.length <= 1) throw new StoreError(409, 'last_owner')
+  }
+
+  async function changeMemberRole(orgId: string, userId: string, role: Role, actor: string): Promise<Membership> {
+    const res = await q.query<MemberRow>('org_members', { where: { org_id: { eq: orgId }, user_id: { eq: userId } }, limit: 1 })
+    const row = res.rows[0]
+    // Not a member: 404 rather than creating one. Adding somebody is `addMember`,
+    // a different decision with a different endpoint.
+    if (!row) throw new StoreError(404, 'not_found')
+    await refuseIfLastOwner(orgId, userId, role)
+    const now = Date.now()
+    await members.emit(row.id, await version(row.id), 'MemberRoleChanged', { role, at: now }, { actor })
+    return toMember({ ...row, role, updated_at: now })
+  }
+
   async function addMember(input: { orgId: string; userId: string; role: Role; actor: string }): Promise<Membership> {
     const existing = await q.query<MemberRow>('org_members', { where: { org_id: { eq: input.orgId }, user_id: { eq: input.userId } }, limit: 1 })
     const now = Date.now()
     if (existing.rows[0]) {
+      await refuseIfLastOwner(input.orgId, input.userId, input.role)
       const id = existing.rows[0].id
       await members.emit(id, await version(id), 'MemberRoleChanged', { role: input.role, at: now }, { actor: input.actor })
       return toMember({ ...existing.rows[0], role: input.role, updated_at: now })
@@ -244,6 +275,7 @@ export function createStore(fb: FoldBase) {
     const res = await q.query<MemberRow>('org_members', { where: { org_id: { eq: orgId }, user_id: { eq: userId } }, limit: 1 })
     const row = res.rows[0]
     if (!row) throw new StoreError(404, 'not_found')
+    await refuseIfLastOwner(orgId, userId, null)
     await members.emit(row.id, await version(row.id), 'MemberRemoved', {}, { actor })
   }
 
@@ -350,6 +382,19 @@ export function createStore(fb: FoldBase) {
     // would be left with neither a membership nor an invitation to retry.
     await invitations.emit(id, await version(id), 'InvitationAccepted', { userId, at: Date.now() }, { actor: userId })
     return member
+  }
+
+  /**
+   * Decline an invitation. Like accepting, the caller proves it is theirs with
+   * the email it was addressed to; an id on its own is not proof of anything.
+   *
+   * Declining is not revoking. It leaves a different event in the log, so a
+   * later question — did they say no, or did we withdraw it? — has an answer.
+   */
+  async function declineInvitation(id: string, userId: string, email: string): Promise<void> {
+    const row = await invitationById(id)
+    if (!row || row.email !== normaliseEmail(email)) throw new StoreError(404, 'not_found')
+    await invitations.emit(id, await version(id), 'InvitationDeclined', { userId, at: Date.now() }, { actor: userId })
   }
 
   // ── scopes ─────────────────────────────────────────────────────────────────
@@ -567,9 +612,9 @@ export function createStore(fb: FoldBase) {
     // orgs
     orgRowByRef, listOrgsForUser, listAllOrgs, createOrg, getOrg, updateOrg, setOrgMetadata, archiveOrg,
     // members
-    roleOf, listMembers, addMember, removeMember,
+    roleOf, listMembers, addMember, changeMemberRole, removeMember,
     // invitations
-    listInvitations, createInvitation, revokeInvitation, listInvitationsForEmail, acceptInvitation,
+    listInvitations, createInvitation, revokeInvitation, listInvitationsForEmail, acceptInvitation, declineInvitation,
     // scopes
     listScopes, scopeByRef, createScope, updateScope, archiveScope, provisionDefaults,
     // PDP

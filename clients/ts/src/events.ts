@@ -90,7 +90,8 @@ export const MembershipEvents = defineAggregate('membership', {
 // front. An owner/admin creates one; the invitee resolves it on their next login
 // (email is matched against the token's `email` claim) and `InvitationAccepted`
 // materializes a `MemberAdded`. One stream per invitation; the row is deleted on
-// accept/revoke (the event log stays the audit trail, like memberships).
+// accept, decline or revoke (the event log stays the audit trail, like
+// memberships).
 
 export const InvitationEvents = defineAggregate('invitation', {
   InvitationCreated: z.object({
@@ -101,6 +102,16 @@ export const InvitationEvents = defineAggregate('invitation', {
     at: z.number().int(),
   }),
   InvitationAccepted: z.object({
+    userId: z.string().min(1),
+    at: z.number().int(),
+  }),
+  /**
+   * The invitee said no. Separate from `InvitationRevoked` on purpose: both
+   * remove the pending row, but one is the organisation withdrawing an offer
+   * and the other is the person refusing it. The log is the audit trail, and
+   * collapsing the two would lose which of them happened.
+   */
+  InvitationDeclined: z.object({
     userId: z.string().min(1),
     at: z.number().int(),
   }),

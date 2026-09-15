@@ -82,6 +82,18 @@ describe('PDP — effective role (org role, inherited downward)', () => {
     expect((await app.get('/authz/role?scope=ghost')).status).toBe(404)
     expect((await app.get('/authz/role')).status).toBe(400)
   })
+
+  it('names the org the way X-Org-Id is allowed to: id, slug or short id', async () => {
+    const { orgId } = await setup()
+    const { org } = await json<{ org: { short_id: string } }>(await app.get('/orgs/acme'))
+
+    // A CLI that ran `use acme` sends the slug; a console sends the id. The same
+    // membership must not depend on which spelling arrived.
+    for (const ref of [orgId, 'acme', org.short_id]) {
+      const res = await json<{ role: string }>(await app.get(`/authz/role?scope=${ref}`))
+      expect(res.role, `scope=${ref}`).toBe('owner')
+    }
+  })
 })
 
 // ── check ───────────────────────────────────────────────────────────────────

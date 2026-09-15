@@ -517,9 +517,19 @@ export function createStore(fb: FoldBase) {
    * root org. `scopeId` may be an org id or a workspace/project/environment id.
    * (v1: no per-sub-scope grants — extend the membership model if needed.)
    */
+  /**
+   * The effective role at a scope.
+   *
+   * The scope may be named the way every other org endpoint accepts — id, slug
+   * or short id — because `X-Org-Id` is allowed to carry any of them
+   * (ADR-042 §3) and the header is where this argument comes from. Resolving
+   * only ids meant a CLI that had run `use acme` was refused by every service
+   * that asks the PDP, while a console sending the id was not: the same
+   * membership, two answers, depending on which spelling arrived.
+   */
   async function effectiveRole(userId: string, scopeId: string): Promise<EffectiveRole> {
     let orgId: string
-    const org = await orgById(scopeId)
+    const org = await orgRowByRef(scopeId)
     if (org) orgId = org.id
     else {
       const scope = await scopeRowById(scopeId)

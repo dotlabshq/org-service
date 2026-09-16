@@ -30,7 +30,7 @@ const ORG2 = {
 
 describe('flect org (list)', () => {
   it('default columns: ID (short_id) → SLUG → NAME', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG, ORG2] })
+    mocks.mockGet('/orgs', { orgs: [ORG, ORG2] })
     const r = await run(['org'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('n2shs8')
@@ -41,13 +41,13 @@ describe('flect org (list)', () => {
   })
 
   it('does not show full UUID in default view', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['org'])
     expect(r.stdout).not.toContain(ORG.id)
   })
 
   it('-o wide adds CREATED and FULL ID columns', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['org', '-o', 'wide'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('CREATED')
@@ -56,7 +56,7 @@ describe('flect org (list)', () => {
   })
 
   it('-o json returns raw JSON array', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['org', '-o', 'json'])
     expect(r.exitCode).toBe(0)
     const parsed = JSON.parse(r.stdout)
@@ -69,7 +69,7 @@ describe('flect org (list)', () => {
 
 describe('flect orgs (plural alias) and ls subcommand', () => {
   it('`orgs` plural alias lists like the bare command', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG, ORG2] })
+    mocks.mockGet('/orgs', { orgs: [ORG, ORG2] })
     const r = await run(['orgs'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('n2shs8')
@@ -77,21 +77,21 @@ describe('flect orgs (plural alias) and ls subcommand', () => {
   })
 
   it('`org ls` runs the list action', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['org', 'ls'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('n2shs8')
   })
 
   it('`orgs ls` runs the list action', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['orgs', 'ls'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('n2shs8')
   })
 
   it('`orgs ls -o wide` still shows FULL ID', async () => {
-    mocks.mockGet('/v1/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs', { orgs: [ORG] })
     const r = await run(['orgs', 'ls', '-o', 'wide'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('FULL ID')
@@ -99,7 +99,7 @@ describe('flect orgs (plural alias) and ls subcommand', () => {
   })
 
   it('`orgs create` works through the plural alias', async () => {
-    const captured = mocks.mockPostCapture('/v1/orgs', { org: ORG })
+    const captured = mocks.mockPostCapture('/orgs', { org: ORG })
     const r = await run(['orgs', 'create', '--name', 'Acme', '--slug', 'acme'])
     expect(r.exitCode).toBe(0)
     expect((captured.body as Record<string, unknown>).slug).toBe('acme')
@@ -110,7 +110,7 @@ describe('flect orgs (plural alias) and ls subcommand', () => {
 
 describe('flect org create', () => {
   it('sends only name when no slug given (API generates slug from name)', async () => {
-    const captured = mocks.mockPostCapture('/v1/orgs', { org: { ...ORG, slug: 'my-org', short_id: 'abc123' } })
+    const captured = mocks.mockPostCapture('/orgs', { org: { ...ORG, slug: 'my-org', short_id: 'abc123' } })
     const r = await run(['org', 'create', '--name', 'My Org'])
     expect(r.exitCode).toBe(0)
     const body = captured.body as Record<string, unknown>
@@ -119,13 +119,13 @@ describe('flect org create', () => {
   })
 
   it('sends explicit slug when provided', async () => {
-    const captured = mocks.mockPostCapture('/v1/orgs', { org: ORG })
+    const captured = mocks.mockPostCapture('/orgs', { org: ORG })
     await run(['org', 'create', '--name', 'Acme', '--slug', 'acme'])
     expect((captured.body as Record<string, unknown>).slug).toBe('acme')
   })
 
   it('shows short_id (not full UUID) in output', async () => {
-    mocks.mockPost('/v1/orgs', { org: ORG })
+    mocks.mockPost('/orgs', { org: ORG })
     const r = await run(['org', 'create', '--name', 'Acme'])
     expect(r.stdout).toContain('n2shs8')
     expect(r.stdout).not.toContain(ORG.id)
@@ -136,21 +136,21 @@ describe('flect org create', () => {
 
 describe('flect org get', () => {
   it('works with slug', async () => {
-    mocks.mockGet('/v1/orgs/acme', { org: ORG })
+    mocks.mockGet('/orgs/acme', { org: ORG })
     const r = await run(['org', 'get', 'acme'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('Acme')
   })
 
   it('works with short_id', async () => {
-    mocks.mockGet('/v1/orgs/n2shs8', { org: ORG })
+    mocks.mockGet('/orgs/n2shs8', { org: ORG })
     const r = await run(['org', 'get', 'n2shs8'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('Acme')
   })
 
   it('id field shows short_id, full_id field shows UUID', async () => {
-    mocks.mockGet('/v1/orgs/acme', { org: ORG })
+    mocks.mockGet('/orgs/acme', { org: ORG })
     const r = await run(['org', 'get', 'acme'])
     const lines = r.stdout.split('\n')
     const idLine = lines.find(l => /^\s+id\s/.test(l))
@@ -163,14 +163,14 @@ describe('flect org get', () => {
 
 describe('flect org update', () => {
   it('works with slug', async () => {
-    const captured = mocks.mockPatchCapture('/v1/orgs/acme', { org: { ...ORG, name: 'Acme HQ' } })
+    const captured = mocks.mockPatchCapture('/orgs/acme', { org: { ...ORG, name: 'Acme HQ' } })
     const r = await run(['org', 'update', 'acme', '--name', 'Acme HQ'])
     expect(r.exitCode).toBe(0)
     expect((captured.body as Record<string, unknown>).name).toBe('Acme HQ')
   })
 
   it('works with short_id', async () => {
-    const captured = mocks.mockPatchCapture('/v1/orgs/n2shs8', { org: { ...ORG, name: 'Acme HQ' } })
+    const captured = mocks.mockPatchCapture('/orgs/n2shs8', { org: { ...ORG, name: 'Acme HQ' } })
     const r = await run(['org', 'update', 'n2shs8', '--name', 'Acme HQ'])
     expect(r.exitCode).toBe(0)
     expect((captured.body as Record<string, unknown>).name).toBe('Acme HQ')
@@ -181,14 +181,14 @@ describe('flect org update', () => {
 
 describe('flect org delete', () => {
   it('works with slug', async () => {
-    mocks.mockDelete('/v1/orgs/acme')
+    mocks.mockDelete('/orgs/acme')
     const r = await run(['org', 'delete', 'acme'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('acme')
   })
 
   it('works with short_id', async () => {
-    mocks.mockDelete('/v1/orgs/n2shs8')
+    mocks.mockDelete('/orgs/n2shs8')
     const r = await run(['org', 'delete', 'n2shs8'])
     expect(r.exitCode).toBe(0)
   })

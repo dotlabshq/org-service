@@ -10,7 +10,7 @@ const ORG_SLUG  = 'acme'
 const WS_SLUG   = 'staging'
 const PROJ_SLUG = 'api'
 const OPT       = ['--org', ORG_SLUG, '--ws', WS_SLUG, '--proj', PROJ_SLUG]
-const BASE      = `/v1/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects/${PROJ_SLUG}/envs`
+const BASE      = `/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects/${PROJ_SLUG}/envs`
 
 const ENV = {
   id:        '019f08dd-5555-7db6-956d-f323dfadba50',

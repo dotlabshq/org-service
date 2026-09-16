@@ -9,7 +9,7 @@ afterAll(() => server.close())
 const ORG_SLUG = 'acme'
 const WS_SLUG  = 'staging'
 const OPT      = ['--org', ORG_SLUG, '--ws', WS_SLUG]
-const BASE     = `/v1/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects`
+const BASE     = `/orgs/${ORG_SLUG}/workspaces/${WS_SLUG}/projects`
 
 const PROJ = {
   id:        '019f07cc-3333-7db6-956d-f323dfadba50',

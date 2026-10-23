@@ -6,6 +6,11 @@ and the policy decision point that answers *may this user do this here?*
 Identity is not this service's job. A realm token carries `sub` and `type` and
 nothing else; **roles live here**, and a caller asks for them.
 
+**In the local realm:** port 3006, published by the gateway at `/v1/org`.
+From the workspace root: `just start org` · `just logs org` · `just restart org`.
+See the workspace [README](../../README.md) for the whole map and
+[AGENTS.md](../../AGENTS.md) for the rules every service here follows.
+
 ## Using it from your app
 
 ### The typed client

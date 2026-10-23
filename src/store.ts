@@ -420,6 +420,34 @@ export function createStore(fb: FoldBase) {
     return byShort.rows[0] ?? null
   }
 
+  /**
+   * A short id no other scope in this org has. The space is 27^6; a collision
+   * is unlikely and must still be impossible, because the short id is how a
+   * scope is named from outside — on the CLI, in a URL, in a header — and two
+   * scopes answering to one name would be a scope-level version of the
+   * X-Org-Id bug this service exists to prevent.
+   */
+  async function freshShortId(orgId: string): Promise<string> {
+    for (;;) {
+      const candidate = generateShortId()
+      const taken = await q.query<ScopeRow>('scopes', { where: { org_id: { eq: orgId }, short_id: { eq: candidate } }, limit: 1 })
+      if (!taken.rows[0]) return candidate
+    }
+  }
+
+  /**
+   * A scope anywhere in the org, by the refs that are unique there: its short
+   * id, or its id. Not by slug — two projects in different workspaces may both
+   * be `main`. This is what a caller holding only `X-Flect-Scope` resolves
+   * through.
+   */
+  async function scopeInOrgByRef(orgId: string, ref: string): Promise<ScopeRow | null> {
+    const byShort = await q.query<ScopeRow>('scopes', { where: { org_id: { eq: orgId }, short_id: { eq: ref } }, limit: 1 })
+    if (byShort.rows[0]) return byShort.rows[0]
+    const byId = await q.query<ScopeRow>('scopes', { where: { org_id: { eq: orgId }, id: { eq: ref } }, limit: 1 })
+    return byId.rows[0] ?? null
+  }
+
   async function createScope(input: {
     orgId: string
     kind: ScopeKind
@@ -444,7 +472,7 @@ export function createStore(fb: FoldBase) {
       parentId: input.parentId,
       name: input.name,
       slug,
-      shortId: generateShortId(),
+      shortId: await freshShortId(input.orgId),
       isDefault: input.isDefault ?? false,
       at: now,
     }, { actor: input.actor })
@@ -512,6 +540,18 @@ export function createStore(fb: FoldBase) {
   }
 
   /**
+   * By short id alone, with no org to narrow it: what the PDP gets from a
+   * caller that sends `X-Flect-Scope` and nothing else. Short ids are unique
+   * within an org, not across orgs, so two matches is a real ambiguity and is
+   * refused rather than resolved by luck.
+   */
+  async function scopeRowByShortId(shortId: string): Promise<ScopeRow | null> {
+    const res = await q.query<ScopeRow>('scopes', { where: { short_id: { eq: shortId } }, limit: 2 })
+    if (res.rows.length > 1) throw new StoreError(409, 'ambiguous', `scope short id ${shortId} exists in more than one org; name the org`)
+    return res.rows[0] ?? null
+  }
+
+  /**
    * The role a user holds at `scopeId`. Roles live at the org (membership),
    * inherited downward: a sub-scope's effective role is the user's role at its
    * root org. `scopeId` may be an org id or a workspace/project/environment id.
@@ -532,7 +572,7 @@ export function createStore(fb: FoldBase) {
     const org = await orgRowByRef(scopeId)
     if (org) orgId = org.id
     else {
-      const scope = await scopeRowById(scopeId)
+      const scope = (await scopeRowById(scopeId)) ?? (await scopeRowByShortId(scopeId))
       if (!scope) throw new StoreError(404, 'not_found', `scope not found: ${scopeId}`)
       orgId = scope.org_id
     }
@@ -626,7 +666,7 @@ export function createStore(fb: FoldBase) {
     // invitations
     listInvitations, createInvitation, revokeInvitation, listInvitationsForEmail, acceptInvitation, declineInvitation,
     // scopes
-    listScopes, scopeByRef, createScope, updateScope, archiveScope, provisionDefaults,
+    listScopes, scopeByRef, scopeInOrgByRef, createScope, updateScope, archiveScope, provisionDefaults,
     // PDP
     effectiveRole, check, registerManifest, setPolicy, listApps, listPolicies,
     // helpers

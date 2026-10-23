@@ -486,6 +486,21 @@ paths:
       responses:
         "200": { description: ok }
 
+  /orgs/{orgRef}/scopes/{ref}:
+    parameters:
+      - { name: orgRef, in: path, required: true, schema: { type: string } }
+      - { name: ref, in: path, required: true, schema: { type: string }, description: The scope's short id, or its id. Not a slug — slugs repeat across parents. }
+    get:
+      tags: [scopes]
+      summary: One scope of any kind, by what names it from outside
+      description: |
+        For a caller that holds a scope's name and no path to it (a service
+        given `X-Flect-Scope`, a CLI argument, a URL). Members only; a
+        non-member gets 404.
+      responses:
+        "200": { description: ok }
+        "404": { description: No such scope in this org, or not a member }
+
   /orgs/{orgRef}/workspaces/{wsRef}/projects:
     parameters:
       - { name: orgRef, in: path, required: true, schema: { type: string } }

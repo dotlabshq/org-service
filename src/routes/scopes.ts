@@ -35,6 +35,21 @@ export function scopesRouter(store: Store) {
     return row
   }
 
+  // ── any scope, by what names it from outside ──────────────────────────────
+
+  /**
+   * A scope anywhere in the org by its short id (or id). The one lookup a
+   * caller that holds only `X-Flect-Scope` needs: no path to the scope, just
+   * its name. Members only; a stranger gets 404, as everywhere here.
+   */
+  app.get('/orgs/:orgRef/scopes/:ref', async (c) => {
+    const auth = c.get('auth')
+    const { orgId } = await orgCtx(c.req.param('orgRef'), auth.userId)
+    const row = await store.scopeInOrgByRef(orgId, c.req.param('ref'))
+    if (!row) throw new StoreError(404, 'not_found')
+    return c.json({ scope: store.toScope(row) })
+  })
+
   // ── workspaces ───────────────────────────────────────────────────────────────
 
   app.get('/orgs/:orgRef/workspaces', async (c) => {

@@ -48,6 +48,11 @@ describe('orgs', () => {
     expect(env.envs.map((e) => e.slug)).toContain('production')
   })
 
+  it('says the creator is the owner in the create answer itself', async () => {
+    const res = await app.post('/v1/orgs', { name: 'Acme', slug: 'acme' })
+    expect((await json<{ org: { role: string } }>(res)).org.role).toBe('owner')
+  })
+
   it('makes the creator an owner', async () => {
     await createOrg()
     const { members } = await json<{ members: Array<{ user_id: string; role: string }> }>(await app.get('/v1/orgs/acme/members'))
@@ -526,5 +531,40 @@ describe('member identity', () => {
     )
     expect(members).toHaveLength(1)
     expect(members[0]!.email).toBeUndefined()
+  })
+})
+
+// ── a scope by what names it from outside ───────────────────────────────────
+
+describe('scope by ref', () => {
+  it('resolves any scope in the org by short id or id, not by slug; strangers get 404', async () => {
+    await createOrg()
+    const { projects } = await json<{ projects: Array<{ id: string; short_id: string; slug: string }> }>(
+      await app.get('/v1/orgs/acme/workspaces/default/projects'),
+    )
+    const main = projects[0]!
+
+    const byShort = await json<{ scope: { id: string; kind: string } }>(await app.get(`/v1/orgs/acme/scopes/${main.short_id}`))
+    expect(byShort.scope.id).toBe(main.id)
+    expect(byShort.scope.kind).toBe('project')
+
+    const byId = await json<{ scope: { id: string } }>(await app.get(`/v1/orgs/acme/scopes/${main.id}`))
+    expect(byId.scope.id).toBe(main.id)
+
+    expect((await app.get(`/v1/orgs/acme/scopes/${main.slug}`)).status).toBe(404)
+    expect((await app.get(`/v1/orgs/acme/scopes/${main.short_id}`, makeToken('stranger'))).status).toBe(404)
+  })
+
+  it('never hands two scopes in one org the same short id', async () => {
+    await createOrg()
+    // Make enough scopes that the lookup path is exercised; uniqueness is
+    // asserted over everything the org now has.
+    for (const name of ['a', 'b', 'c', 'd']) await app.post('/v1/orgs/acme/workspaces', { name })
+    const { workspaces } = await json<{ workspaces: Array<{ id: string; short_id: string }> }>(await app.get('/v1/orgs/acme/workspaces'))
+    const shorts = workspaces.map((w) => w.short_id)
+    expect(new Set(shorts).size).toBe(shorts.length)
+    for (const w of workspaces) {
+      expect((await json<{ scope: { id: string } }>(await app.get(`/v1/orgs/acme/scopes/${w.short_id}`))).scope.id).toBe(w.id)
+    }
   })
 })

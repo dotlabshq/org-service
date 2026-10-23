@@ -252,6 +252,15 @@ export class OrgClient {
     return env
   }
 
+  /**
+   * A scope anywhere in an org by its short id (or id) — what a caller holding
+   * only a scope's name, with no path to it, resolves through.
+   */
+  async scope(orgRef: string, ref: string): Promise<Scope> {
+    const { scope } = await this.api<{ scope: Scope }>('GET', `/orgs/${encodeURIComponent(orgRef)}/scopes/${encodeURIComponent(ref)}`)
+    return scope
+  }
+
   // ── PDP (access decisions + app registry) ──────────────────────────────────
 
   /** The effective role a user holds at a scope (org role, inherited downward). */

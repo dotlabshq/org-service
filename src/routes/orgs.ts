@@ -71,7 +71,8 @@ export function orgsRouter(store: Store) {
     const auth = c.get('auth')
     const input = c.req.valid('json')
     const org = await store.createOrg({ name: input.name, slug: input.slug, ownerId: auth.userId }).catch(fail)
-    return c.json({ org }, 201)
+    // The creator is made owner in the same breath; say so, as the list does.
+    return c.json({ org: { ...org, role: 'owner' } }, 201)
   })
 
   /**

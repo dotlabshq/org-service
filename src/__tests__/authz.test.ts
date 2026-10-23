@@ -83,6 +83,16 @@ describe('PDP — effective role (org role, inherited downward)', () => {
     expect((await app.get('/authz/role')).status).toBe(400)
   })
 
+  it('names a scope by its short id, the way X-Flect-Scope will', async () => {
+    const { projectId } = await setup()
+    const { projects } = await json<{ projects: Array<{ id: string; short_id: string }> }>(
+      await app.get('/v1/orgs/acme/workspaces/default/projects'),
+    )
+    const main = projects.find((p) => p.id === projectId)!
+    const byShort = await json<{ role: string }>(await app.get(`/authz/role?scope=${main.short_id}`))
+    expect(byShort.role).toBe('owner')
+  })
+
   it('names the org the way X-Org-Id is allowed to: id, slug or short id', async () => {
     const { orgId } = await setup()
     const { org } = await json<{ org: { short_id: string } }>(await app.get('/orgs/acme'))

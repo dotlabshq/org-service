@@ -6,9 +6,10 @@ export default defineConfig({
     events: 'src/events.ts',
     projections: 'src/projections.ts',
     cli: 'src/cli.ts',
+    hono: 'src/hono.ts',
   },
   format: ['esm'],
   dts: true,
   clean: true,
-  external: ['@baseworks/cli', '@baseworks/foldbase', 'zod', 'commander'],
+  external: ['@baseworks/cli', '@baseworks/foldbase', 'zod', 'commander', 'hono'],
 })

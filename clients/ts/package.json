@@ -10,7 +10,8 @@
     ".": "./dist/client.js",
     "./events": "./dist/events.js",
     "./projections": "./dist/projections.js",
-    "./cli": "./dist/cli.js"
+    "./cli": "./dist/cli.js",
+    "./hono": "./dist/hono.js"
   },
   "files": [
     "dist",
@@ -34,6 +35,15 @@
     "msw": "^2.14.6",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "hono": "^4.12.27"
+  },
+  "peerDependencies": {
+    "hono": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
   }
 }

@@ -577,14 +577,14 @@ export function createStore(fb: FoldBase) {
       orgId = scope.org_id
     }
     const role = await roleOf(orgId, userId)
-    return role ? { role, via: { scopeId: orgId, scopeKind: 'org' } } : { role: 'none' }
+    return role ? { role, via: { scope_id: orgId, scope_kind: 'org' } } : { role: 'none' }
   }
 
   const toApp = (r: AppRow): RegisteredApp => ({
-    id: r.id, name: r.name, origin: r.origin, createdAt: r.created_at, updatedAt: r.updated_at,
+    id: r.id, name: r.name, origin: r.origin, created_at: r.created_at, updated_at: r.updated_at,
   })
   const toPolicy = (r: AppPolicyRow): AppPolicy => ({
-    id: r.id, app: r.app, action: r.action, minRole: r.min_role, createdAt: r.created_at, updatedAt: r.updated_at,
+    id: r.id, app: r.app, action: r.action, min_role: r.min_role, created_at: r.created_at, updated_at: r.updated_at,
   })
 
   async function appRowByName(name: string): Promise<AppRow | null> {
@@ -653,9 +653,9 @@ export function createStore(fb: FoldBase) {
     const { role } = await effectiveRole(input.userId, input.scopeId)
     if (!policy) return { allowed: false, role, reason: 'no_policy' }
     if (!roleAtLeast(role, policy.min_role)) {
-      return { allowed: false, role, minRole: policy.min_role, reason: 'insufficient_role' }
+      return { allowed: false, role, min_role: policy.min_role, reason: 'insufficient_role' }
     }
-    return { allowed: true, role, minRole: policy.min_role }
+    return { allowed: true, role, min_role: policy.min_role }
   }
 
   return {

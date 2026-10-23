@@ -10,7 +10,7 @@ afterAll(() => server.close())
 
 describe('flect access role', () => {
   it('shows the effective role and where it comes from', async () => {
-    mocks.mockGet('/authz/role', { role: 'owner', via: { scopeKind: 'org' } })
+    mocks.mockGet('/authz/role', { role: 'owner', via: { scope_kind: 'org' } })
     const r = await run(['access', 'role', 'org-1'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('owner')
@@ -22,14 +22,14 @@ describe('flect access role', () => {
 
 describe('flect access check', () => {
   it('exits 0 when allowed', async () => {
-    mocks.mockPost('/authz/check', { allowed: true, role: 'owner', minRole: 'member' })
+    mocks.mockPost('/authz/check', { allowed: true, role: 'owner', min_role: 'member' })
     const r = await run(['access', 'check', 'flect', 'deploy', 'proj-1'])
     expect(r.exitCode).toBe(0)
     expect(r.stdout).toContain('yes')
   })
 
   it('exits non-zero when denied', async () => {
-    mocks.mockPost('/authz/check', { allowed: false, role: 'member', minRole: 'admin', reason: 'insufficient_role' })
+    mocks.mockPost('/authz/check', { allowed: false, role: 'member', min_role: 'admin', reason: 'insufficient_role' })
     const r = await run(['access', 'check', 'flect', 'db.manage', 'proj-1'])
     expect(r.exitCode).not.toBe(0)
     expect(r.stdout).toContain('insufficient_role')
@@ -49,7 +49,7 @@ describe('flect access app', () => {
 
   it('policies renders ACTION / MIN ROLE', async () => {
     mocks.mockGet('/apps/flect/policies', {
-      policies: [{ action: 'deploy', minRole: 'member' }, { action: 'db.manage', minRole: 'admin' }],
+      policies: [{ action: 'deploy', min_role: 'member' }, { action: 'db.manage', min_role: 'admin' }],
     })
     const r = await run(['access', 'app', 'policies', 'flect'])
     expect(r.exitCode).toBe(0)

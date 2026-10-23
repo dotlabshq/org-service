@@ -39,11 +39,11 @@ describe('PDP — app registry', () => {
     await setup()
     expect((await app.post('/apps/register', MANIFEST)).status).toBe(201)
 
-    const { policies } = await json<{ policies: Array<{ action: string; minRole: string }> }>(
+    const { policies } = await json<{ policies: Array<{ action: string; min_role: string }> }>(
       await app.get('/apps/flect/policies'),
     )
     expect(policies.map((p) => p.action).sort()).toEqual(['db.manage', 'deploy'])
-    expect(policies.find((p) => p.action === 'deploy')!.minRole).toBe('member')
+    expect(policies.find((p) => p.action === 'deploy')!.min_role).toBe('member')
 
     const { apps } = await json<{ apps: Array<{ name: string }> }>(await app.get('/apps'))
     expect(apps.map((a) => a.name)).toContain('flect')
@@ -56,10 +56,10 @@ describe('PDP — app registry', () => {
     // owner must NOT change it (admin overrides survive redeploys).
     await app.post('/apps/register', { ...MANIFEST, actions: { deploy: 'owner' } })
 
-    const { policies } = await json<{ policies: Array<{ action: string; minRole: string }> }>(
+    const { policies } = await json<{ policies: Array<{ action: string; min_role: string }> }>(
       await app.get('/apps/flect/policies'),
     )
-    expect(policies.find((p) => p.action === 'deploy')!.minRole).toBe('member')
+    expect(policies.find((p) => p.action === 'deploy')!.min_role).toBe('member')
   })
 })
 
@@ -69,9 +69,9 @@ describe('PDP — effective role (org role, inherited downward)', () => {
   it('owner at org inherits to sub-scopes; stranger is none; unknown 404', async () => {
     const { orgId, projectId } = await setup()
 
-    const atOrg = await json<{ role: string; via?: { scopeKind: string } }>(await app.get(`/authz/role?scope=${orgId}`))
+    const atOrg = await json<{ role: string; via?: { scope_kind: string } }>(await app.get(`/authz/role?scope=${orgId}`))
     expect(atOrg.role).toBe('owner')
-    expect(atOrg.via?.scopeKind).toBe('org')
+    expect(atOrg.via?.scope_kind).toBe('org')
 
     const atProj = await json<{ role: string }>(await app.get(`/authz/role?scope=${projectId}`))
     expect(atProj.role).toBe('owner') // inherited from the org

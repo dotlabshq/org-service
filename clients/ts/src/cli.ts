@@ -870,7 +870,7 @@ export function addGlobalCommands(program: Command, deps: OrgCliDeps): void {
 //        flect access app policies <name>
 
 type AppRow    = { name: string; origin: string };
-type PolicyRow = { action: string; minRole: string };
+type PolicyRow = { action: string; min_role: string };
 
 export function buildAccessCommand(deps: OrgCliDeps): Command {
   const { http } = deps;
@@ -884,8 +884,8 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .option('--user <id>', 'Target user (default: you)')
       .action(async (scope: string, opts: { user?: string }) => {
         const q   = new URLSearchParams({ scope, ...(opts.user ? { user: opts.user } : {}) });
-        const res = await http.get<{ role: string; via?: { scopeKind: string } }>(`/authz/role?${q}`).catch(die);
-        kv([['role', res.role], ['via', res.via ? res.via.scopeKind : '—']]);
+        const res = await http.get<{ role: string; via?: { scope_kind: string } }>(`/authz/role?${q}`).catch(die);
+        kv([['role', res.role], ['via', res.via ? res.via.scope_kind : '—']]);
       }),
   );
 
@@ -894,14 +894,14 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .description('Ask the PDP whether an app action is allowed at a scope')
       .option('--user <id>', 'Target user (default: you)')
       .action(async (app: string, action: string, scope: string, opts: { user?: string }) => {
-        const res = await http.post<{ allowed: boolean; role: string; minRole?: string; reason?: string }>(
+        const res = await http.post<{ allowed: boolean; role: string; min_role?: string; reason?: string }>(
           '/authz/check',
           { app, action, scope_id: scope, ...(opts.user ? { user_id: opts.user } : {}) },
         ).catch(die);
         kv([
           ['allowed', res.allowed ? 'yes' : 'no'],
           ['your role', res.role],
-          ['required', res.minRole ?? '—'],
+          ['required', res.min_role ?? '—'],
           ...(res.reason ? [['reason', res.reason] as [string, string]] : []),
         ]);
         if (!res.allowed) process.exit(1); // non-zero so `if flect access check …` works in scripts
@@ -927,7 +927,7 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .action(async (name: string, opts: { output: string }) => {
         const res = await http.get<{ policies: PolicyRow[] }>(`/apps/${encodeURIComponent(name)}/policies`).catch(die);
         printOutput(res.policies, opts.output, () =>
-          table(res.policies, [{ key: 'action', label: 'ACTION' }, { key: 'minRole', label: 'MIN ROLE' }] as ColDef<PolicyRow>[]),
+          table(res.policies, [{ key: 'action', label: 'ACTION' }, { key: 'min_role', label: 'MIN ROLE' }] as ColDef<PolicyRow>[]),
         );
       }),
   );

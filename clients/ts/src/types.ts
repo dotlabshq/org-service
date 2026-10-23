@@ -138,17 +138,17 @@ export interface RegisteredApp {
   id: string
   name: string
   origin: string
-  createdAt: number
-  updatedAt: number
+  created_at: number
+  updated_at: number
 }
 
 export interface AppPolicy {
   id: string
   app: string
   action: string
-  minRole: Role
-  createdAt: number
-  updatedAt: number
+  min_role: Role
+  created_at: number
+  updated_at: number
 }
 
 /** An app's boot-time policy manifest: action → minimum role. */
@@ -162,13 +162,13 @@ export interface AppManifest {
 export interface EffectiveRole {
   role: Role | 'none'
   /** The scope that produced the role — the root org in v1. */
-  via?: { scopeId: string; scopeKind: 'org' }
+  via?: { scope_id: string; scope_kind: 'org' }
 }
 
 /** The PDP verdict for one `check`. */
 export interface CheckResult {
   allowed: boolean
   role: Role | 'none'
-  minRole?: Role
+  min_role?: Role
   reason?: 'no_policy' | 'insufficient_role'
 }

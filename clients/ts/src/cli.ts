@@ -5,6 +5,8 @@ import { tree }    from '@baseworks/cli/tree';
 import type { TreeNode }          from '@baseworks/cli/tree';
 import type { ApiClient }         from '@baseworks/cli/client';
 import type { ContextManager }    from '@baseworks/cli/context';
+import type * as types           from './types.js';
+import type { Organization, Scope, EffectiveRole, CheckResult, RegisteredApp, AppPolicy } from './types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,17 +17,18 @@ export interface OrgCliDeps {
   cliName?: string;
 }
 
-type OrgRow  = { id: string; short_id: string; slug: string; name: string; created_at?: number };
-type OrgMeta = OrgRow & { metadata?: Record<string, unknown> };
-type WsRow   = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
-type ProjRow = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
-type EnvRow  = { id: string; short_id: string; slug: string; name: string; is_default?: boolean };
-// The real one, not a copy: a second definition here went stale the moment the
-// service started joining in the member's email and name. Mapped rather than
-// aliased, because the table helpers take a `Record<string, unknown>` and an
-// interface has no implicit index signature.
-type Membership = { [K in keyof import('./types.js').Membership]: import('./types.js').Membership[K] };
-type Invitation = { id: string; org_id: string; email: string; role: string; invited_by: string; created_at: number; updated_at: number; org_slug?: string; org_name?: string };
+// Every row the CLI reads is the client's own type, not a copy: copies went
+// stale twice (members gained email/name, invitations org_name/org_slug) and
+// nothing noticed. Mapped rather than aliased, because the table helpers take
+// a `Record<string, unknown>` and an interface has no implicit index signature.
+type Row<T> = { [K in keyof T]: T[K] };
+type OrgRow     = Row<Organization>;
+type OrgMeta    = OrgRow;
+type WsRow      = Row<Scope>;
+type ProjRow    = Row<Scope>;
+type EnvRow     = Row<Scope>;
+type Membership = Row<types.Membership>;
+type Invitation = Row<types.Invitation>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -868,8 +871,8 @@ export function addGlobalCommands(program: Command, deps: OrgCliDeps): void {
 //        flect access app list
 //        flect access app policies <name>
 
-type AppRow    = { name: string; origin: string };
-type PolicyRow = { action: string; min_role: string };
+type AppRow    = Row<RegisteredApp>;
+type PolicyRow = Row<AppPolicy>;
 
 export function buildAccessCommand(deps: OrgCliDeps): Command {
   const { http } = deps;
@@ -883,7 +886,7 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .option('--user <id>', 'Target user (default: you)')
       .action(async (scope: string, opts: { user?: string }) => {
         const q   = new URLSearchParams({ scope, ...(opts.user ? { user: opts.user } : {}) });
-        const res = await http.get<{ role: string; via?: { scope_kind: string } }>(`/authz/role?${q}`).catch(die);
+        const res = await http.get<EffectiveRole>(`/authz/role?${q}`).catch(die);
         kv([['role', res.role], ['via', res.via ? res.via.scope_kind : '—']]);
       }),
   );
@@ -893,7 +896,7 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .description('Ask the PDP whether an app action is allowed at a scope')
       .option('--user <id>', 'Target user (default: you)')
       .action(async (app: string, action: string, scope: string, opts: { user?: string }) => {
-        const res = await http.post<{ allowed: boolean; role: string; min_role?: string; reason?: string }>(
+        const res = await http.post<CheckResult>(
           '/authz/check',
           { app, action, scope_id: scope, ...(opts.user ? { user_id: opts.user } : {}) },
         ).catch(die);

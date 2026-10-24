@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { clr, kv, table, summary, success, warn, fatal, printOutput, outputOption, prompt } from '@baseworks/cli/display';
 import { fmtDate } from '@baseworks/cli/fmt';
 import { tree }    from '@baseworks/cli/tree';
-import type { ColDef, TableOpts } from '@baseworks/cli/display';
 import type { TreeNode }          from '@baseworks/cli/tree';
 import type { ApiClient }         from '@baseworks/cli/client';
 import type { ContextManager }    from '@baseworks/cli/context';
@@ -90,7 +89,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         { key: 'name',    label: 'NAME' },
         { key: 'created_at', label: 'CREATED', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',      label: 'FULL ID',  wide: true },
-      ] as ColDef<OrgMeta>[], { wide, emptyHint: `No orgs yet.  Run: ${cli} org create --name <n>` });
+      ], { wide, emptyHint: `No orgs yet.  Run: ${cli} org create --name <n>` });
       summary(`${res.orgs.length} org${res.orgs.length !== 1 ? 's' : ''}`);
     }, 'slug');
   };
@@ -226,7 +225,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         { key: 'user_id',   label: 'USER ID', wide: true },
         { key: 'created_at', label: 'JOINED', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'FULL ID', wide: true },
-      ] as ColDef<Membership>[], { wide, emptyHint: `No members yet.` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No members yet.` });
       summary(`${res.members.length} member${res.members.length !== 1 ? 's' : ''}`);
     }, 'user_id');
   };
@@ -312,7 +311,7 @@ export function buildOrgCommand(deps: OrgCliDeps): Command {
         { key: 'invited_by', label: 'INVITED BY', wide: true },
         { key: 'created_at', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'ID' },
-      ] as ColDef<Invitation>[], { wide, emptyHint: `No pending invitations.  Run: ${cli} org invite <email>` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No pending invitations.  Run: ${cli} org invite <email>` });
       summary(`${res.invitations.length} pending invitation${res.invitations.length !== 1 ? 's' : ''}`);
     }, 'email');
   };
@@ -365,7 +364,7 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
         { key: 'invited_by', label: 'INVITED BY', wide: true },
         { key: 'created_at', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
         { key: 'id',        label: 'ID' },
-      ] as ColDef<Invitation>[], { wide, emptyHint: `No invitations for you.` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No invitations for you.` });
       summary(`${res.invitations.length} invitation${res.invitations.length !== 1 ? 's' : ''} — accept with: ${cli} invites accept <id>`);
     }, 'id');
   };
@@ -424,7 +423,7 @@ export function buildWsCommand(deps: OrgCliDeps): Command {
         { key: 'name',      label: 'NAME' },
         { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
-      ] as ColDef<WsRow>[], { wide, emptyHint: `No workspaces yet.  Run: ${cli} ws create --name <n>` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No workspaces yet.  Run: ${cli} ws create --name <n>` });
       summary(`${res.workspaces.length} workspace${res.workspaces.length !== 1 ? 's' : ''}`);
     }, 'slug');
   };
@@ -525,7 +524,7 @@ export function buildProjCommand(deps: OrgCliDeps): Command {
         { key: 'name',      label: 'NAME' },
         { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
-      ] as ColDef<ProjRow>[], { wide, emptyHint: `No projects yet.  Run: ${cli} proj create --name <n>` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No projects yet.  Run: ${cli} proj create --name <n>` });
       summary(`${res.projects.length} project${res.projects.length !== 1 ? 's' : ''}`);
     }, 'slug');
   };
@@ -645,7 +644,7 @@ export function buildEnvCommand(deps: OrgCliDeps): Command {
         { key: 'name',      label: 'NAME' },
         { key: 'is_default', label: 'DEFAULT', fmt: v => v ? '✓' : '' },
         { key: 'id',        label: 'FULL ID',  wide: true },
-      ] as ColDef<EnvRow>[], { wide, emptyHint: `No envs yet.  Run: ${cli} env create --name <n>` } as TableOpts & { wide: boolean });
+      ], { wide, emptyHint: `No envs yet.  Run: ${cli} env create --name <n>` });
       summary(`${res.envs.length} env${res.envs.length !== 1 ? 's' : ''}`);
     }, 'slug');
   };
@@ -916,7 +915,7 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .action(async (opts: { output: string }) => {
         const res = await http.get<{ apps: AppRow[] }>('/apps').catch(die);
         printOutput(res.apps, opts.output, () =>
-          table(res.apps, [{ key: 'name', label: 'APP' }, { key: 'origin', label: 'ORIGIN' }] as ColDef<AppRow>[]),
+          table(res.apps, [{ key: 'name', label: 'APP' }, { key: 'origin', label: 'ORIGIN' }]),
         );
       }),
   );
@@ -927,7 +926,7 @@ export function buildAccessCommand(deps: OrgCliDeps): Command {
       .action(async (name: string, opts: { output: string }) => {
         const res = await http.get<{ policies: PolicyRow[] }>(`/apps/${encodeURIComponent(name)}/policies`).catch(die);
         printOutput(res.policies, opts.output, () =>
-          table(res.policies, [{ key: 'action', label: 'ACTION' }, { key: 'min_role', label: 'MIN ROLE' }] as ColDef<PolicyRow>[]),
+          table(res.policies, [{ key: 'action', label: 'ACTION' }, { key: 'min_role', label: 'MIN ROLE' }]),
         );
       }),
   );

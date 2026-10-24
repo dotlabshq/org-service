@@ -495,8 +495,10 @@ paths:
       summary: One scope of any kind, by what names it from outside
       description: |
         For a caller that holds a scope's name and no path to it (a service
-        given `X-Flect-Scope`, a CLI argument, a URL). Members only; a
-        non-member gets 404.
+        given `X-Flect-Scope`, a CLI argument, a URL). Members, or any
+        service token (a trusted caller that has done its own
+        authorisation, as for `GET /orgs/{ref}`). Anyone else gets 404, and
+        so does a scope that is not in the org named.
       responses:
         "200": { description: ok }
         "404": { description: No such scope in this org, or not a member }

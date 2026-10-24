@@ -41,10 +41,19 @@ export function scopesRouter(store: Store) {
    * A scope anywhere in the org by its short id (or id). The one lookup a
    * caller that holds only `X-Flect-Scope` needs: no path to the scope, just
    * its name. Members only; a stranger gets 404, as everywhere here.
+   *
+   * A service token may read it too, on the same basis as `GET /orgs/:ref`: a
+   * trusted caller that has done its own authorisation. The broker uses this
+   * to check that the scope a runtime token was bound to still belongs to the
+   * token's org before it hands out credentials.
    */
   app.get('/orgs/:orgRef/scopes/:ref', async (c) => {
     const auth = c.get('auth')
-    const { orgId } = await orgCtx(c.req.param('orgRef'), auth.userId)
+    const orgId =
+      auth.tokenType === 'service'
+        ? (await store.orgRowByRef(c.req.param('orgRef')))?.id
+        : (await orgCtx(c.req.param('orgRef'), auth.userId)).orgId
+    if (!orgId) throw new StoreError(404, 'not_found')
     const row = await store.scopeInOrgByRef(orgId, c.req.param('ref'))
     if (!row) throw new StoreError(404, 'not_found')
     return c.json({ scope: store.toScope(row) })

@@ -555,6 +555,21 @@ describe('scope by ref', () => {
     expect((await app.get(`/v1/orgs/acme/scopes/${main.short_id}`, makeToken('stranger'))).status).toBe(404)
   })
 
+  it('a service token reads a scope by id, and is told 404 for a scope of another org', async () => {
+    const { org } = await createOrg()
+    const other = await createOrg('Other', 'other', makeToken('someone-else'))
+    const { workspaces } = await json<{ workspaces: Array<{ id: string }> }>(await app.get('/v1/orgs/acme/workspaces'))
+    const svc = makeServiceToken('flect-api')
+
+    const found = await app.get(`/v1/orgs/${org.id}/scopes/${workspaces[0]!.id}`, svc)
+    expect(found.status).toBe(200)
+    expect((await json<{ scope: { org_id: string } }>(found)).scope.org_id).toBe(org.id)
+
+    // The scope is real, but not in the org named: a moved or forged binding.
+    expect((await app.get(`/v1/orgs/${other.org.id}/scopes/${workspaces[0]!.id}`, svc)).status).toBe(404)
+    expect((await app.get(`/v1/orgs/no-such-org/scopes/${workspaces[0]!.id}`, svc)).status).toBe(404)
+  })
+
   it('never hands two scopes in one org the same short id', async () => {
     await createOrg()
     // Make enough scopes that the lookup path is exercised; uniqueness is

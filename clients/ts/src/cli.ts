@@ -359,8 +359,8 @@ export function buildInvitesCommand(deps: OrgCliDeps): Command {
     const res = await http.get<{ invitations: Invitation[] }>('/invitations').catch(e => { console.error(e.message); process.exit(1); });
     printOutput(res.invitations, opts.output, (wide) => {
       table(res.invitations, [
-        { key: 'orgName',   label: 'ORG' },
-        { key: 'orgSlug',   label: 'SLUG' },
+        { key: 'org_name',  label: 'ORG' },
+        { key: 'org_slug',  label: 'SLUG' },
         { key: 'role',      label: 'ROLE' },
         { key: 'invited_by', label: 'INVITED BY', wide: true },
         { key: 'created_at', label: 'SENT', wide: true, fmt: v => fmtDate(v as number) },
@@ -986,7 +986,7 @@ async function runUseCommand(
 
   if (parts.length <= 1 && orgHint) {
     const cfg = ctx.loadConfig() as Record<string, unknown>;
-    ctx.saveConfig({ ...cfg, activeOrg: orgRes.org.slug, context: { org: orgRes.org.slug, orgId: orgRes.org.id } } as never);
+    ctx.saveConfig({ ...cfg, activeOrg: orgRes.org.slug, context: { org: orgRes.org.slug, orgId: orgRes.org.id, orgShort: orgRes.org.short_id } } as never);
     success('Active org set.');
     kv([['org', orgRes.org.slug]]);
     return;
@@ -1000,7 +1000,7 @@ async function runUseCommand(
   if (parts.length === 2) {
     const cfg = ctx.loadConfig() as Record<string, unknown>;
     ctx.saveConfig({ ...cfg, activeOrg: orgRes.org.slug } as never);
-    ctx.setContext({ org: orgRes.org.slug, orgId: orgRes.org.id, workspace: ws!.slug, workspaceId: ws!.id });
+    ctx.setContext({ org: orgRes.org.slug, orgId: orgRes.org.id, orgShort: orgRes.org.short_id, workspace: ws!.slug, workspaceId: ws!.id, workspaceShort: ws!.short_id });
     success('Active context set.');
     kv([['org', orgRes.org.slug], ['workspace', ws!.slug]]);
     return;
@@ -1027,15 +1027,22 @@ async function runUseCommand(
     ? (envs.find(e => e.slug === envHint) ?? fatal(`Env not found: ${envHint}`))
     : (envs.length === 1 ? envs[0]! : await pick('env', envs));
 
+  // Each level by slug (for people), by id (internal), and by short id — what
+  // names a scope from outside (headers, URLs, MCP). A client sends the short
+  // id; the services resolve it.
   ctx.setContext({
-    org:         orgRes.org.slug,
-    orgId:       orgRes.org.id,
-    workspace:   ws!.slug,
-    workspaceId: ws!.id,
-    project:     proj!.slug,
-    projectId:   proj!.id,
-    env:         env!.slug,
-    envId:       env!.id,
+    org:            orgRes.org.slug,
+    orgId:          orgRes.org.id,
+    orgShort:       orgRes.org.short_id,
+    workspace:      ws!.slug,
+    workspaceId:    ws!.id,
+    workspaceShort: ws!.short_id,
+    project:        proj!.slug,
+    projectId:      proj!.id,
+    projectShort:   proj!.short_id,
+    env:            env!.slug,
+    envId:          env!.id,
+    envShort:       env!.short_id,
   });
 
   success('Active context set.');

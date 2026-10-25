@@ -823,7 +823,7 @@ export function addGlobalCommands(program: Command, deps: OrgCliDeps): void {
           `  ${clr.dim}${orgs.length} org${orgs.length !== 1 ? 's' : ''}` +
           `  ·  ${totalWs} workspace${totalWs !== 1 ? 's' : ''}` +
           `  ·  ${totalProj} project${totalProj !== 1 ? 's' : ''}` +
-          (activeOrg ? `  ·  active: ${clr.bold}${activeOrg}/${activeWs}/${activeProj}${clr.reset}${clr.dim}` : '') +
+          (activeOrg ? `  ·  active: ${clr.bold}${[activeOrg, activeWs, activeProj].filter(Boolean).join('/')}${clr.reset}${clr.dim}` : '') +
           clr.reset,
         );
         console.log();

@@ -67,3 +67,17 @@ describe('flect invites', () => {
     expect(r.stdout).toContain('acme')
   })
 })
+
+describe('flect ls', () => {
+  it('names only the levels that are selected', async () => {
+    mocks.mockGet('/orgs/acme', { org: ORG })
+    await runCommand(program(), ['use', 'acme'])
+    mocks.mockGet('/orgs', { orgs: [ORG] })
+    mocks.mockGet('/orgs/acme/workspaces', { workspaces: [WS] })
+    mocks.mockGet('/orgs/acme/workspaces/default/projects', { projects: [PROJ] })
+    const r = await runCommand(program(), ['ls'])
+    expect(r.exitCode).toBe(0)
+    expect(r.stdout).toMatch(/active: \S*acme/)
+    expect(r.stdout).not.toContain('undefined')
+  })
+})

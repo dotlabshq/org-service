@@ -1,6 +1,10 @@
 # org-service — baseworks-ts monorepo KÖKÜNDEN build edilir:
 #   podman build -f projects/org-service/Dockerfile.workspace -t org-service:<tag> .
 #
+# Dockerfile.workspace.dockerignore beside this file keeps local env files and
+# node_modules out of the context. The .dockerignore in this folder does not
+# apply here: the context is the monorepo root, not this folder.
+#
 # Servis TS kaynaktan (tsx) çalışır: workspace client paketleri (@baseworks/*) tsup ile
 # derlenir, servis kodu derlenmez — dev ile aynı yol, tek derleme adımı.
 FROM node:22-alpine AS build

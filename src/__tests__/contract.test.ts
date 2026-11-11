@@ -30,7 +30,7 @@ import {
 import type {
   CheckResult, EffectiveRole, Invitation, Membership, Organization, RegisteredApp, AppPolicy, Scope,
 } from '../../clients/ts/src/types.js'
-import { bootTestFoldBase, makeTestApp, makeToken, USER_ID, type TestFoldBase } from './setup.js'
+import { bootTestFoldBase, makeServiceToken, makeTestApp, makeToken, USER_ID, type TestFoldBase } from './setup.js'
 
 // ── the shape check ─────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ const INVITATION: Spec<Invitation> = {
 }
 const ROLE: Spec<EffectiveRole> = { role: 'req', via: 'opt' }
 const VIA: Spec<NonNullable<EffectiveRole['via']>> = { scope_id: 'req', scope_kind: 'req' }
-const VERDICT: Spec<CheckResult> = { allowed: 'req', role: 'req', min_role: 'opt', reason: 'opt' }
+const VERDICT: Spec<CheckResult> = { allowed: 'req', role: 'req', min_role: 'opt', reason: 'opt', defaulted: 'opt' }
 const APP: Spec<RegisteredApp> = { id: 'req', name: 'req', origin: 'req', created_at: 'req', updated_at: 'req' }
 const POLICY: Spec<AppPolicy> = { id: 'req', app: 'req', action: 'req', min_role: 'req', created_at: 'req', updated_at: 'req' }
 
@@ -216,9 +216,12 @@ describe('the client against the service', () => {
     expectShape<EffectiveRole>(role, ROLE, 'effectiveRole')
     expectShape<NonNullable<EffectiveRole['via']>>(role.via, VIA, 'effectiveRole.via')
     expect(role).toEqual({ role: 'owner', via: { scope_id: org.id, scope_kind: 'org' } })
-    expect((await c.effectiveRole(env.id, INVITEE)).role).toBe('member')
+    // Asking about somebody else, and registering an app, are a service's to
+    // do: the app's own identity, here.
+    const asApp = client(makeServiceToken('contract-app'))
+    expect((await asApp.effectiveRole(env.id, INVITEE)).role).toBe('member')
 
-    const app = await c.registerApp({ name: 'contract-app', origin: 'http://app.test', actions: { deploy: 'admin', read: 'viewer' } })
+    const app = await asApp.registerApp({ name: 'contract-app', origin: 'http://app.test', actions: { deploy: 'admin', read: 'viewer' } })
     expectShape<RegisteredApp>(app, APP, 'registerApp')
     for (const a of await c.listApps()) expectShape<RegisteredApp>(a, APP, 'listApps[]')
     const policies = await c.listAppPolicies('contract-app')
@@ -228,7 +231,7 @@ describe('the client against the service', () => {
     const yes = await c.check({ app: 'contract-app', action: 'deploy', scopeId: env.id })
     expectShape<CheckResult>(yes, VERDICT, 'check(allowed)')
     expect(yes.allowed).toBe(true)
-    const no = await c.check({ app: 'contract-app', action: 'deploy', scopeId: env.id, userId: INVITEE })
+    const no = await asApp.check({ app: 'contract-app', action: 'deploy', scopeId: env.id, userId: INVITEE })
     expectShape<CheckResult>(no, VERDICT, 'check(denied)')
     expect(no).toMatchObject({ allowed: false, role: 'member', min_role: 'admin', reason: 'insufficient_role' })
   })

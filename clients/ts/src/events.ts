@@ -121,7 +121,7 @@ export const InvitationEvents = defineAggregate('invitation', {
 // ── app registry + policy (the PDP) ───────────────────────────────────────────
 //
 // The PDP answers "may user U do action A at scope S?". Apps register a manifest
-// (action → minimum role) at boot; deny-by-default until a policy exists. Roles
+// (action → minimum role) at boot; an action with no policy asks for `member`. Roles
 // resolve over org membership, inherited downward to every sub-scope (v1: no
 // per-sub-scope grants — those extend the membership model later if needed).
 

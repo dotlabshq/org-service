@@ -604,6 +604,9 @@ export function createStore(fb: FoldBase) {
    * defaults ONLY for actions that have no policy yet — explicit admin overrides
    * survive redeploys.
    */
+  /** What an action nobody declared asks for. */
+  const DEFAULT_MIN_ROLE: Role = 'member'
+
   async function registerManifest(manifest: AppManifest, actor: string): Promise<RegisteredApp> {
     const now = Date.now()
     const existing = await appRowByName(manifest.name)
@@ -648,14 +651,26 @@ export function createStore(fb: FoldBase) {
   }
 
   /** The PDP: may `userId` perform `action` of `app` at `scopeId`? Deny-by-default. */
+  /**
+   * May this person do this action here?
+   *
+   * An app says what each of its actions needs in the manifest it registers
+   * (`deals.delete: admin`). An action nobody declared — because the app
+   * registered no manifest at all, or not this action — is open to a **member**:
+   * being in the organization is the least anything asks, and a `viewer` or a
+   * stranger is still refused. The answer says when that default was used
+   * (`defaulted`), so a caller that would rather refuse an undeclared action
+   * can.
+   */
   async function check(input: { app: string; action: string; userId: string; scopeId: string }): Promise<CheckResult> {
     const policy = await policyRow(input.app, input.action)
     const { role } = await effectiveRole(input.userId, input.scopeId)
-    if (!policy) return { allowed: false, role, reason: 'no_policy' }
-    if (!roleAtLeast(role, policy.min_role)) {
-      return { allowed: false, role, min_role: policy.min_role, reason: 'insufficient_role' }
+    const minRole: Role = policy?.min_role ?? DEFAULT_MIN_ROLE
+    const defaulted = policy ? {} : { defaulted: true as const }
+    if (!roleAtLeast(role, minRole)) {
+      return { allowed: false, role, min_role: minRole, reason: 'insufficient_role', ...defaulted }
     }
-    return { allowed: true, role, min_role: policy.min_role }
+    return { allowed: true, role, min_role: minRole, ...defaulted }
   }
 
   return {

@@ -7,6 +7,7 @@ import { authzRouter } from './routes/authz.js'
 import { appsRouter } from './routes/apps.js'
 import { internalRouter } from './routes/internal.js'
 import { pagesRouter } from './routes/pages.js'
+import { createRoleCache, withRoleCache } from './lib/role-cache.js'
 import { StoreError, createStore } from './store.js'
 import { serviceManifest } from '@baseworks/core/service'
 import { readFileSync } from 'node:fs'
@@ -41,7 +42,8 @@ const onError = (err: Error, c: Context) => {
 
 /** Build the org-service Hono app over a foldbase client. */
 export function createApp(fb: FoldBase): Hono {
-  const store = createStore(fb)
+  // Roles are remembered for a few seconds; every membership write forgets them.
+  const store = withRoleCache(createStore(fb), createRoleCache())
   const app = new Hono()
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'org-service' }))
@@ -52,7 +54,9 @@ export function createApp(fb: FoldBase): Hono {
   //          prefix. Discovery and the contract are part of it.
   //   /ui    pages — choose, create, members, invitations, settings; published
   //          at `/org`. They are clients of `api`, with the person's token.
-  //   /      not published: `/healthz` and the internal routes.
+  //   /_     internal — other services on the same network: `/_/apps/register`,
+  //          `/_/all-orgs`. Never mapped by a gateway.
+  //   /      not published either: `/healthz`.
   //
   // The service never encodes where it is published or under which version.
   const api = new Hono()
@@ -99,23 +103,25 @@ export function createApp(fb: FoldBase): Hono {
 
   app.route('/ui', pagesRouter(api, { mount: '/ui' }))
 
-  // Internal: at the root only, never under `/api`.
+  // Internal: under `/_` only, never under `/api`.
   const internal = internalRouter(store)
+  app.route('/_', internal)
 
-  // ── Until every direct caller names `/api` ──────────────────────────────
+  // ── Until every direct caller names `/api` and `/_` ─────────────────────
   // The API used to be mounted at the root, and before that under `/v1`. Both
   // stay for now: seven product services, the flect broker and clave reach
   // this service on its own address and ask the root (`/authz/role`), and the
   // published @baseworks/org client is pointed at whatever base it is given.
   // A gateway that still strips `/v1/org` also lands here. Removing these two
   // mounts is the next step, and it is the breaking one.
+  //
+  // The internal routes stay reachable at their old addresses too (`/all-orgs`
+  // for clave, `/apps/register` for the flect broker). That is safe to leave:
+  // what guards them is who is calling, and that check travels with the route.
   app.get('/.well-known/service', manifest)
   app.get('/openapi.yaml', contract)
-  for (const r of routers) app.route('/', r)
-  for (const r of routers) app.route('/v1', r)
-  // `/v1/all-orgs` is what callers that predate the root mount still ask for.
-  app.route('/v1', internal)
-  app.route('/', internal)
+  for (const r of [...routers, internal]) app.route('/', r)
+  for (const r of [...routers, internal]) app.route('/v1', r)
 
   app.onError(onError)
 

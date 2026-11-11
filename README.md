@@ -8,7 +8,7 @@ nothing else; **roles live here**, and a caller asks for them.
 
 **In the local realm:** port 3006, published by the gateway at `/v1/org`.
 
-**Where it stands (0.10.0, 2026-11-11).** org is on the workspace's
+**Where it stands (0.11.0, 2026-11-11).** org is on the workspace's
 four-layer layout ([ADR 0003](../../docs/adr/0003-service-surfaces.md)) except
 for the last, breaking step of the API move:
 
@@ -171,6 +171,8 @@ and `organizationId`; both are gone.
 | `AUTH_ISSUER` · `AUTH_AUDIENCE` | Expected `iss` / `aud`. Set both in production |
 | `JWT_SECRET` | Legacy HS256, accepted while set. Remove once the realm is on ES256 |
 | `ORG_MEMBERSHIP_WRITERS` | `svc-a,svc-b` — services that may write memberships. Empty means none |
+| `ORG_APP_REGISTRARS` | `app:identity,app:identity` — the service identity allowed to register an app when it differs from the app's name |
+| `ORG_ROLE_CACHE_SECONDS` | How long a role is remembered; default `10`, `0` turns it off |
 | `ORG_ALLOW_SLUG_CHANGE` | `true` lets slugs be renamed. Only for a realm where nothing derives names from them |
 | `FOLDBASE_*` | Event store connection |
 
@@ -189,13 +191,13 @@ own published path; the version belongs to the gateway.
 expose = [{ path = "/v1/org", to = "/api" }]
 ```
 
-Three things are **not** under `/api`, on purpose:
+What is **not** under `/api`, on purpose:
 
-- `GET /healthz` — at the root, for the platform and the internal network.
-- `GET /all-orgs` — at the root. It hands a service token every organization,
-  so it is for services on the same network only. No gateway rule maps
-  anything to the root, which is what keeps it unpublished; the service-token
-  check is what guards it in any case.
+- **`/_` — internal routes**, for other services on the same network:
+  `POST /_/apps/register`, `GET /_/all-orgs`. No gateway rule ever maps
+  anything to `/_`, so they cannot be reached from outside. The network is not
+  the whole defence, so each also checks who is calling ([below](#apps-actions-and-who-may-do-what)).
+- `GET /healthz` — at the root, for the platform.
 - Pages — under `/ui`, published at `/org` ([below](#pages)).
 
 **Still served, and going away:** the same API at the root (`/orgs`,
@@ -206,6 +208,68 @@ gateway that still strips `/v1/org` lands there too. Point a direct caller at
 given, so that is a configuration change, not a code change. The root and
 `/v1` API mounts are removed once nothing uses them, and that release is the
 breaking one.
+
+## Apps, actions, and who may do what
+
+Membership is one role per person per organization: `owner`, `admin`, `member`,
+`viewer`. What that role lets them do **in a given product** is that product's
+own rule set, and org-service is where it is kept and decided.
+
+**An app declares its actions.** At boot it registers a manifest: each action
+and the least role that may do it.
+
+```ts
+await org.registerApp({
+  name: 'quillpath',
+  origin: 'https://quillpath.example',
+  actions: { 'deals.create': 'member', 'deals.delete': 'admin', 'billing.manage': 'owner' },
+})
+```
+
+**Then it asks.** `POST /authz/check { app, action, scope_id }` answers
+`{ allowed, role, min_role }`: allowed when the person's role in that
+organization is at least the action's.
+
+**An action nobody declared is a member's.** No manifest at all, or not this
+action: the bar is `member`, and the answer carries `defaulted: true`. A
+`viewer` and a stranger are still refused. The manifest is how an app raises
+the bar, not how it opens the door. (Until 0.11 an undeclared action was denied
+with `reason: no_policy`. A caller that wants that strictness back treats
+`defaulted` as a refusal.)
+
+**Only the app itself registers.** `POST /_/apps/register` takes a **service
+token whose identity is the app's name**; a person's token, and another
+service's, get `403`. Otherwise one app could lower another's bar, and so could
+anyone signed in. How the app gets that identity:
+
+1. The realm gives the service a name and a secret: in auth-service,
+   `AUTH_SERVICE_CLIENTS=quillpath:<secret>`; the same secret in the service.
+2. At boot the service asks auth-service for a token
+   (`POST <auth>/api/service-token`, or `serviceToken()` from
+   `@baseworks/auth/service-token`). It says `sub: quillpath, type: service`,
+   lives at most an hour and is signed with the realm's key.
+3. The service calls `registerApp` with it. org-service verifies the signature
+   against the realm's published keys, as it does for any token; it does not
+   call auth-service.
+
+`ORG_APP_REGISTRARS=flect:flect-api` names the identity that speaks for an app
+when the two are not spelled the same. **This check is only worth something in
+a realm that signs with ES256** (`AUTH_SIGNING_KEY`): under the legacy shared
+secret any holder can write itself a token with any `sub`. mTLS between
+services (clave #163) will replace the token as the proof; the rule stays.
+
+**A person asks about themselves.** `GET /authz/role?user=` and `check` with
+`user_id` naming somebody else are for service tokens. From a person's token
+they answer `403`.
+
+**Roles are remembered for a few seconds.** `/authz/role` is asked on every
+request to every product service. The answer is kept in memory for
+`ORG_ROLE_CACHE_SECONDS` (default `10`, `0` off) and forgotten at once on any
+membership change made through the same instance. With several instances, a
+change made on one is seen by the others within that many seconds.
+
+Not built: an organization changing an app's rules for itself ("here, members
+may delete deals"). The rule set is per app, for every organization.
 
 ## Pages
 

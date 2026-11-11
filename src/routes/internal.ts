@@ -1,17 +1,53 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { Role } from '@baseworks/org/events'
 import { requireAuth } from '../lib/auth.js'
-import type { Store } from '../store.js'
+import { StoreError, type Store } from '../store.js'
+
+function fail(err: unknown): never {
+  if (err instanceof StoreError) throw err
+  throw new StoreError(500, 'internal', (err as Error).message)
+}
+
+/**
+ * Who may register (or change) the manifest of the app called `name`.
+ *
+ * **Only the app itself.** The caller must be a service — a token of
+ * `type: service`, which only auth-service issues, to a client it knows by a
+ * secret — and its identity must be the app's name. A manifest sets what every
+ * action of an app asks for, so an app that could register under another's
+ * name could lower that app's bar; and a person's token could do the same from
+ * a browser. Until 0.11 this route checked nothing but that someone was signed
+ * in.
+ *
+ * `ORG_APP_REGISTRARS=flect:flect-api,quillpath:quillpath-api` names the
+ * service identity that speaks for an app when the two are not spelled the
+ * same (flect's broker signs in as `flect-api` and registers `flect`).
+ *
+ * The proof of identity is the token today. When the platform gives services
+ * certificates (mTLS, clave #163) the proof changes and this rule does not:
+ * `caller` is whatever the realm says the calling service is.
+ */
+export function mayRegisterApp(name: string, caller: { userId: string; tokenType?: string }, env: Record<string, string | undefined> = process.env): boolean {
+  if (caller.tokenType !== 'service') return false
+  if (caller.userId === name) return true
+  for (const entry of (env['ORG_APP_REGISTRARS'] ?? '').split(',')) {
+    const [app, identity] = entry.split(':').map((part) => part.trim())
+    if (app === name && identity && identity === caller.userId) return true
+  }
+  return false
+}
 
 /**
  * Routes for other services on the same network, and for nobody else.
  *
- * These are mounted at the service root and NOT under `/api`. A gateway
- * publishes `/api` (at `/v1/org`) and, when there are pages, `/ui` (at `/org`);
- * no rule maps anything to the root, so a route here cannot be reached from
- * outside whatever a deployment's rules say (workspace ADR 0003 §1). Until this
- * service's root API mount is retired the root is still published by gateways
- * that strip `/v1/org`, and those deny `/all-orgs` by hand; the token check
- * below is what actually guards it either way.
+ * Mounted under **`/_`** and never under `/api`. A gateway publishes `/api`
+ * (at `/v1/org`) and `/ui` (at `/org`); nothing is ever mapped to `/_`, so a
+ * route here cannot be reached from outside whatever a deployment's rules say
+ * (workspace ADR 0003). The network is not the whole defence, though — a
+ * neighbour on it is not automatically a friend — so each route also checks
+ * who is calling.
  */
 export function internalRouter(store: Store) {
   const app = new Hono()
@@ -27,6 +63,25 @@ export function internalRouter(store: Store) {
     if (auth.tokenType !== 'service') return c.json({ error: 'forbidden' }, 403)
     return c.json({ orgs: await store.listAllOrgs() })
   })
+
+  /**
+   * An app declares its actions and what each one asks for. Called by the app
+   * at boot, idempotently: a default is written only for an action that has no
+   * policy yet, so a later change made on purpose survives a redeploy.
+   */
+  app.post(
+    '/apps/register',
+    zValidator('json', z.object({ name: z.string().min(1), origin: z.string().min(1), actions: z.record(Role) })),
+    async (c) => {
+      const auth = c.get('auth')
+      const manifest = c.req.valid('json')
+      if (!mayRegisterApp(manifest.name, auth)) {
+        return c.json({ error: 'forbidden', message: `Only the app itself may register "${manifest.name}"` }, 403)
+      }
+      const registered = await store.registerManifest(manifest, auth.userId).catch(fail)
+      return c.json({ app: registered }, 201)
+    },
+  )
 
   return app
 }

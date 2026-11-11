@@ -49,6 +49,13 @@ export interface OrgClientOptions {
   token?: string
   /** Forwarded end-user identity. */
   auth?: AuthContext
+  /**
+   * Where org-service's internal routes are (`/_`), for the calls only another
+   * service makes: `registerApp`. Unset, it is worked out from `baseUrl` — the
+   * service's own address with `/api` (or the older `/v1`) replaced by `/_`. A gateway address has
+   * no internal routes behind it, on purpose: reach org-service directly.
+   */
+  internalUrl?: string
   /** Injectable fetch (tests / non-global environments). */
   fetch?: typeof fetch
 }
@@ -93,9 +100,12 @@ export interface HttpClient {
  */
 export class OrgClient {
   private readonly baseUrl: string
+  private readonly internalUrl: string
   private readonly fetchImpl: typeof fetch
   constructor(private readonly opts: OrgClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '')
+    // `/api` is the mount; `/v1` is the older one some callers still name.
+    this.internalUrl = (opts.internalUrl ?? `${this.baseUrl.replace(/\/(api|v1)$/, '')}/_`).replace(/\/$/, '')
     this.fetchImpl = opts.fetch ?? globalThis.fetch
   }
 
@@ -114,8 +124,8 @@ export class OrgClient {
     return { ...h, ...extra }
   }
 
-  async api<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+  async api<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}, base = this.baseUrl): Promise<T> {
+    const res = await this.fetchImpl(`${base}${path}`, {
       method,
       headers: this.headers(body !== undefined, extra),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -263,13 +273,20 @@ export class OrgClient {
 
   // ── PDP (access decisions + app registry) ──────────────────────────────────
 
-  /** The effective role a user holds at a scope (org role, inherited downward). */
+  /**
+   * The effective role a user holds at a scope (org role, inherited downward).
+   * `userId` naming somebody other than the caller needs a service token.
+   */
   async effectiveRole(scopeId: string, userId?: string): Promise<EffectiveRole> {
     const q = new URLSearchParams({ scope: scopeId, ...(userId ? { user: userId } : {}) })
     return this.api<EffectiveRole>('GET', `/authz/role?${q}`)
   }
 
-  /** Ask the PDP whether an app action is allowed at a scope (deny-by-default). */
+  /**
+   * Ask the PDP whether an app action is allowed at a scope. An action the app
+   * never declared is open to a `member` (`defaulted: true` in the answer).
+   * Naming another user (`userId`) needs a service token.
+   */
   async check(input: { app: string; action: string; scopeId: string; userId?: string }): Promise<CheckResult> {
     return this.api<CheckResult>('POST', '/authz/check', {
       app: input.app,
@@ -279,9 +296,18 @@ export class OrgClient {
     })
   }
 
-  /** Register (or refresh) an app's policy manifest. */
+  /**
+   * Register (or refresh) an app's policy manifest: its actions and the
+   * minimum role each asks for. Call it once at boot.
+   *
+   * **Only the app itself may.** The client's token must be a service token
+   * whose identity is `manifest.name` (or one org-service was told speaks for
+   * it, `ORG_APP_REGISTRARS`); a person's token is refused. The route is
+   * internal (`/_/apps/register`), so `baseUrl` must be org-service's own
+   * address, not a gateway's.
+   */
   async registerApp(manifest: AppManifest): Promise<RegisteredApp> {
-    const { app } = await this.api<{ app: RegisteredApp }>('POST', '/apps/register', manifest)
+    const { app } = await this.api<{ app: RegisteredApp }>('POST', '/apps/register', manifest, {}, this.internalUrl)
     return app
   }
 

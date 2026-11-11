@@ -169,6 +169,10 @@ export interface EffectiveRole {
 export interface CheckResult {
   allowed: boolean
   role: Role | 'none'
+  /** What the action asks for: the app's declared minimum, or `member` when it declared none. */
   min_role?: Role
+  /** `no_policy` is no longer sent (org-service 0.11): an undeclared action defaults to `member`. */
   reason?: 'no_policy' | 'insufficient_role'
+  /** True when the app declared nothing for this action and the `member` default decided. */
+  defaulted?: true
 }

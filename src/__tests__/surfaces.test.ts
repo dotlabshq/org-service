@@ -1,6 +1,6 @@
 /**
  * The mounts (workspace ADR 0003): the API under `/api`, which a gateway
- * publishes at `/v1/org`; internal routes at the root, which no gateway rule
+ * publishes at `/v1/org`; internal routes under `/_`, which no gateway rule
  * reaches; and the two older API mounts, kept until every direct caller has
  * moved.
  */
@@ -46,20 +46,25 @@ describe('the API is under /api', () => {
   })
 })
 
-describe('internal routes are at the root and nowhere a gateway publishes', () => {
+describe('internal routes are under /_ and nowhere a gateway publishes', () => {
   it('/all-orgs is not under /api, so replacing /v1/org with /api cannot expose it', async () => {
     const res = await app.get('/api/all-orgs', makeServiceToken())
     expect(res.status).toBe(404)
   })
 
-  it('/all-orgs answers a service on the same network, at the root', async () => {
-    const res = await app.get('/all-orgs', makeServiceToken())
+  it('/_/all-orgs answers a service on the same network', async () => {
+    const res = await app.get('/_/all-orgs', makeServiceToken())
     expect(res.status).toBe(200)
     const { orgs } = await json<{ orgs: Array<{ slug: string }> }>(res)
     expect(orgs.some((o) => o.slug === 'acme')).toBe(true)
   })
 
-  it('/all-orgs refuses a person even there', async () => {
+  it('refuses a person even there: the network is not the whole defence', async () => {
+    expect((await app.get('/_/all-orgs')).status).toBe(403)
+  })
+
+  it('still answers at the address older callers use', async () => {
+    expect((await app.get('/all-orgs', makeServiceToken())).status).toBe(200)
     expect((await app.get('/all-orgs')).status).toBe(403)
   })
 

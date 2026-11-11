@@ -12,8 +12,17 @@ info:
     the service root and under `/v1` for callers that reach the service
     directly; those two mounts will be removed.
 
-    `/all-orgs` is the exception: it is internal, mounted at the service root
-    only, and never published. `/healthz` is at the root as well.
+    **Internal routes are not part of the published API.** `/all-orgs` and
+    `/apps/register` are mounted under `/_` (`<service>/_/apps/register`), for
+    other services on the same network, and are never published by a gateway.
+    They are documented here because services call them. `/healthz` is at the
+    service root.
+
+    **The PDP.** An app registers its actions and the least role each asks for;
+    `/authz/check` decides. An action no app declared asks for `member` and the
+    answer says `defaulted: true`. A person may ask only about themselves:
+    naming another user in `/authz/role` or `/authz/check` needs a service
+    token.
 
     **Field names are `snake_case`** (ADR-043), request and response alike, and
     identical to the underlying row names — so a field added to a projection
@@ -640,9 +649,14 @@ paths:
       tags: [pdp]
       summary: Register an app and its action policy
       description: |
+        **Internal: `<service>/_/apps/register`, not under `/api`, never
+        published.** Only the app itself may call it: a service token whose
+        identity is `name` (or one listed for it in `ORG_APP_REGISTRARS`).
+        Anything else answers `403`.
+
         An app declares the minimum role each of its actions needs. This is the
-        policy the decision point compares against; an unregistered action is
-        denied.
+        policy the decision point compares against; an action it does not
+        declare asks for `member`.
       requestBody:
         required: true
         content:

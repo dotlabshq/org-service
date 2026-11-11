@@ -41,7 +41,14 @@ for pages (published at `/org`), and a **root that is not published**
 - Products do not write organization screens. If one needs something these
   pages lack, it is added here.
 - A route meant only for other services goes in `src/routes/internal.ts`,
-  mounted at the root and never under `/api`.
+  mounted under **`/_`** and never under `/api`. It still checks who is calling
+  (`mayRegisterApp`, a service token): the network is not a trust boundary.
+- **The PDP's rules of thumb:** an app's actions come from the manifest it
+  registers as itself; an undeclared action is a `member`'s; a person asks only
+  about themselves, a service may ask about anyone. Roles go through
+  `withRoleCache` (`src/lib/role-cache.ts`), which wraps the store so that no
+  route has to remember to invalidate — add a new membership write to its
+  `WRITES` list.
 - Never write `/v1` or `/org` in service code. Where the gateway publishes the
   service is configuration.
 - The root and `/v1` API mounts in `src/app.ts` are legacy, kept for direct
@@ -132,8 +139,9 @@ delete resolves by **slug OR shortId**.
     the **org** (membership), inherited downward: a sub-scope's effective role is
     the user's org role. `scope` may be an org id or a ws/proj/env id. v1 has **no
     per-sub-scope grants** — extend the membership model if a consumer needs them.
-  - `check(app, action, scope, user)` — deny-by-default: needs a registered policy
-    AND `roleAtLeast(effectiveRole, policy.minRole)`. Rank
+  - `check(app, action, scope, user)` — allowed when the user's effective role
+    is at least the action's minimum: the one the app declared, or `member` for
+    an action it never declared (`defaulted: true`). Rank
     `viewer<member<admin<owner`.
   - `registerManifest` inserts defaults only for actions **without** a policy, so
     explicit overrides survive redeploys.

@@ -5,10 +5,15 @@ info:
   description: |
     Organisations, membership, the scope tree, and the policy decision point.
 
-    **Mounting.** Routes live at the service root. Behind a gateway the service
-    is published at `/v1/org/...` with that prefix stripped, so `/orgs` here is
-    `https://<host>/v1/org/orgs` in public. The old `/v1/orgs` paths are still
-    served for callers that predate the gateway; they will be removed.
+    **Mounting.** This document is the API. The service mounts it under
+    `/api`, and a gateway publishes that at `/v1/org`, replacing the prefix, so
+    `/orgs` here is `/api/orgs` inside the service and
+    `https://<host>/v1/org/orgs` in public. The same routes are still served at
+    the service root and under `/v1` for callers that reach the service
+    directly; those two mounts will be removed.
+
+    `/all-orgs` is the exception: it is internal, mounted at the service root
+    only, and never published. `/healthz` is at the root as well.
 
     **Field names are `snake_case`** (ADR-043), request and response alike, and
     identical to the underlying row names — so a field added to a projection
@@ -26,7 +31,7 @@ info:
 servers:
   - url: https://example.com/v1/org
     description: Behind a gateway
-  - url: http://127.0.0.1:3006
+  - url: http://127.0.0.1:3006/api
     description: Direct, for local development
 
 tags:
@@ -109,6 +114,9 @@ paths:
       tags: [orgs]
       summary: Every organisation
       description: |
+        **Internal: at the service root (`<service>/all-orgs`), not under
+        `/api`, and not published by a gateway.**
+
         **Service tokens only.** Not a user surface: it exists for a service that
         has already established its own operator authorisation and needs the
         list. A user token gets `403` regardless of role.

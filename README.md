@@ -7,6 +7,17 @@ Identity is not this service's job. A realm token carries `sub` and `type` and
 nothing else; **roles live here**, and a caller asks for them.
 
 **In the local realm:** port 3006, published by the gateway at `/v1/org`.
+
+**Where it stands (0.9.0, 2026-11-11).** org is moving onto the workspace's
+four-layer layout ([ADR 0003](../../docs/adr/0003-service-surfaces.md)), one
+safe step at a time:
+
+| Layer | State |
+|---|---|
+| **api** | Mounted under `/api` as of 0.9.0. The root and `/v1` mounts remain for callers that reach the service directly; they are removed in a later release |
+| **ui** | No pages and no screens package yet. The organization screen is still inside the console (`apps/console`). Planned: pages under `/ui` for accepting an invitation and for choosing or creating an organization; screens in `@baseworks/org/ui` |
+| **cli** | `@baseworks/org/cli`, mounted by `bw` |
+| **mcp** | None yet. Planned: `@baseworks/org/mcp`, tool definitions an application adds to its own MCP server |
 From the workspace root: `just start org` · `just logs org` · `just restart org`.
 See the workspace [README](../../README.md) for the whole map and
 [AGENTS.md](../../AGENTS.md) for the rules every service here follows.
@@ -162,12 +173,36 @@ and `organizationId`; both are gone.
 
 ## Endpoints
 
-Full contract: [`openapi.yaml`](./openapi.yaml), served at `/openapi.yaml`.
+Full contract: [`openapi.yaml`](./openapi.yaml), served at `/api/openapi.yaml`
+(published: `/v1/org/openapi.yaml`).
 
-Routes live at the service **root**. A gateway publishes the service at
-`/v1/org/...` and strips that prefix, so `/orgs` here is
-`https://<host>/v1/org/orgs` in public. The old `/v1/orgs` paths are still
-served for callers that predate the gateway and will be removed.
+The API is mounted under **`/api`**. A gateway publishes it at `/v1/org/...`,
+replacing the prefix, so `/api/orgs` in the service is
+`https://<host>/v1/org/orgs` in public. The service never names `/v1` or its
+own published path; the version belongs to the gateway.
+
+```toml
+# flect.toml
+expose = [{ path = "/v1/org", to = "/api" }]
+```
+
+Three things are **not** under `/api`, on purpose:
+
+- `GET /healthz` — at the root, for the platform and the internal network.
+- `GET /all-orgs` — at the root. It hands a service token every organization,
+  so it is for services on the same network only. No gateway rule maps
+  anything to the root, which is what keeps it unpublished; the service-token
+  check is what guards it in any case.
+- Pages, when there are some — under `/ui`, published at `/org`.
+
+**Still served, and going away:** the same API at the root (`/orgs`,
+`/authz/role`, ...) and under `/v1` (`/v1/orgs`). The product services, the
+flect broker and clave call org on its own address and ask the root today; a
+gateway that still strips `/v1/org` lands there too. Point a direct caller at
+`<ORG_SERVICE_URL>/api` — the `@baseworks/org` client takes whatever base it is
+given, so that is a configuration change, not a code change. The root and
+`/v1` API mounts are removed once nothing uses them, and that release is the
+breaking one.
 
 ## Rules worth knowing before you call it
 

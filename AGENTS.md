@@ -22,6 +22,23 @@ question. iam is identity + credentials only; it never answers authz.
 Deploy model: a lego piece. Any app that installs `@baseworks/sdk` +
 `@baseworks/org` gains the org capability in one line — `env.service('org')`.
 
+## Layers and mounts (workspace ADR 0003)
+
+A capability is **api, ui, cli and mcp**, and this repository owns all four.
+Inside the process: **`/api`** for the API (published at `/v1/org`), **`/ui`**
+for pages (published at `/org`; none yet), and a **root that is not
+published** (`/healthz`, internal routes such as `/all-orgs`).
+
+- A new endpoint goes in a router mounted under `/api`, and in `openapi.yaml`.
+- A route meant only for other services goes in `src/routes/internal.ts`,
+  mounted at the root and never under `/api`.
+- Never write `/v1` or `/org` in service code. Where the gateway publishes the
+  service is configuration.
+- The root and `/v1` API mounts in `src/app.ts` are legacy, kept for direct
+  callers. Do not add to them, and do not remove them in passing: the product
+  services, the flect broker and clave ask the root today.
+- Where each layer stands is in the README, at the top.
+
 ## The three packages
 
 | Package | Location | Role |

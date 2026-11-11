@@ -56,17 +56,6 @@ export function orgsRouter(store: Store) {
     return c.json({ orgs: await store.listOrgsForUser(auth.userId) })
   })
 
-  /**
-   * Tüm org'lar. Yalnızca SERVİS token'ı: bu bir kullanıcı yüzeyi değil,
-   * çağıran servisin (ör. bir platform paneli) kendi operatör yetkisini
-   * kendi tarafında doğrulayıp kullandığı bir listedir.
-   */
-  app.get('/all-orgs', async (c) => {
-    const auth = c.get('auth')
-    if (auth.tokenType !== 'service') return c.json({ error: 'forbidden' }, 403)
-    return c.json({ orgs: await store.listAllOrgs() })
-  })
-
   app.post('/orgs', zValidator('json', z.object({ name: z.string().min(1), slug: slug.optional() })), async (c) => {
     const auth = c.get('auth')
     const input = c.req.valid('json')

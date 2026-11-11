@@ -66,7 +66,7 @@ const INVITATION: Spec<Invitation> = {
 }
 const ROLE: Spec<EffectiveRole> = { role: 'req', via: 'opt' }
 const VIA: Spec<NonNullable<EffectiveRole['via']>> = { scope_id: 'req', scope_kind: 'req' }
-const VERDICT: Spec<CheckResult> = { allowed: 'req', role: 'req', min_role: 'opt', reason: 'opt', defaulted: 'opt' }
+const VERDICT: Spec<CheckResult> = { allowed: 'req', role: 'req', min_role: 'opt', reason: 'opt' }
 const APP: Spec<RegisteredApp> = { id: 'req', name: 'req', origin: 'req', created_at: 'req', updated_at: 'req' }
 const POLICY: Spec<AppPolicy> = { id: 'req', app: 'req', action: 'req', min_role: 'req', created_at: 'req', updated_at: 'req' }
 

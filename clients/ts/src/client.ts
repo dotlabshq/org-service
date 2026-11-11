@@ -283,8 +283,8 @@ export class OrgClient {
   }
 
   /**
-   * Ask the PDP whether an app action is allowed at a scope. An action the app
-   * never declared is open to a `member` (`defaulted: true` in the answer).
+   * Ask the PDP whether an app action is allowed at a scope. Deny-by-default:
+   * an action the app never declared is refused (`reason: 'no_policy'`).
    * Naming another user (`userId`) needs a service token.
    */
   async check(input: { app: string; action: string; scopeId: string; userId?: string }): Promise<CheckResult> {

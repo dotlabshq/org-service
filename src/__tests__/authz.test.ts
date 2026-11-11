@@ -110,8 +110,8 @@ describe('PDP — effective role (org role, inherited downward)', () => {
 
 // ── check ───────────────────────────────────────────────────────────────────
 
-describe('PDP — check', () => {
-  it('owner passes; member is gated by min role; an undeclared action is a member\'s', async () => {
+describe('PDP — check (deny-by-default)', () => {
+  it('owner passes; member is gated by min role; an undeclared action is nobody\'s', async () => {
     const { orgId, projectId } = await setup()
     await app.post('/_/apps/register', MANIFEST, FLECT)
     await app.post('/v1/orgs/acme/members', { user_id: 'user-mem', role: 'member' })
@@ -135,26 +135,21 @@ describe('PDP — check', () => {
     )
     expect(own.allowed).toBe(true)
 
-    // An action the app never declared asks for a member, and says the
-    // default decided: the manifest is how an app raises the bar, not how it
-    // opens the door.
-    const unk = await json<{ allowed: boolean; min_role: string; defaulted?: boolean }>(
-      await app.post('/authz/check', { app: 'flect', action: 'nope', scope_id: orgId }, mem),
+    // An action the app never declared is refused, for the owner too: the
+    // manifest is the list of what may be done. A new action someone forgot to
+    // add, or an app whose registration failed, must not be open by accident.
+    const unk = await json<{ allowed: boolean; reason: string }>(
+      await app.post('/authz/check', { app: 'flect', action: 'nope', scope_id: orgId }),
     )
-    expect(unk).toMatchObject({ allowed: true, min_role: 'member', defaulted: true })
+    expect(unk).toMatchObject({ allowed: false, reason: 'no_policy' })
 
     // The same for an app that registered nothing at all.
-    const noApp = await json<{ allowed: boolean; defaulted?: boolean }>(
-      await app.post('/authz/check', { app: 'never-registered', action: 'anything', scope_id: orgId }, mem),
+    const noApp = await json<{ allowed: boolean; reason: string }>(
+      await app.post('/authz/check', { app: 'never-registered', action: 'anything', scope_id: orgId }),
     )
-    expect(noApp).toMatchObject({ allowed: true, defaulted: true })
+    expect(noApp).toMatchObject({ allowed: false, reason: 'no_policy' })
 
-    // A viewer is in the organization and still below the default.
-    await app.post('/v1/orgs/acme/members', { user_id: 'user-view', role: 'viewer' })
-    const viewer = await json<{ allowed: boolean; reason: string }>(
-      await app.post('/authz/check', { app: 'flect', action: 'nope', scope_id: orgId }, makeToken('user-view')),
-    )
-    expect(viewer).toMatchObject({ allowed: false, reason: 'insufficient_role' })
+    // What members may do is said, not assumed: `deploy: member` above.
 
     // a stranger has no role → gated
     const stranger = await json<{ allowed: boolean; role: string }>(

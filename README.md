@@ -230,12 +230,12 @@ await org.registerApp({
 `{ allowed, role, min_role }`: allowed when the person's role in that
 organization is at least the action's.
 
-**An action nobody declared is a member's.** No manifest at all, or not this
-action: the bar is `member`, and the answer carries `defaulted: true`. A
-`viewer` and a stranger are still refused. The manifest is how an app raises
-the bar, not how it opens the door. (Until 0.11 an undeclared action was denied
-with `reason: no_policy`. A caller that wants that strictness back treats
-`defaulted` as a refusal.)
+**An action nobody declared is refused**, for everyone, with
+`reason: no_policy` — no manifest at all, or not this action. The manifest is
+the list of what may be done; what members may do is written there
+(`'deals.create': 'member'`), not assumed. Refusing is the safe way to be wrong:
+an app whose registration failed at boot, or a new action someone forgot to
+declare, is closed rather than quietly open to the whole organization.
 
 **Only the app itself registers.** `POST /_/apps/register` takes a **service
 token whose identity is the app's name**; a person's token, and another

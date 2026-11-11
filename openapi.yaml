@@ -19,8 +19,8 @@ info:
     service root.
 
     **The PDP.** An app registers its actions and the least role each asks for;
-    `/authz/check` decides. An action no app declared asks for `member` and the
-    answer says `defaulted: true`. A person may ask only about themselves:
+    `/authz/check` decides, deny-by-default: an action no app declared is
+    refused with `reason: no_policy`. A person may ask only about themselves:
     naming another user in `/authz/role` or `/authz/check` needs a service
     token.
 
@@ -656,7 +656,7 @@ paths:
 
         An app declares the minimum role each of its actions needs. This is the
         policy the decision point compares against; an action it does not
-        declare asks for `member`.
+        declare is denied.
       requestBody:
         required: true
         content:

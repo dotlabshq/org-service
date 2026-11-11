@@ -615,10 +615,19 @@ paths:
   /authz/check:
     post:
       tags: [pdp]
-      summary: May this user take this action here?
+      summary: May this principal take this action here?
       description: |
-        Deny by default. The decision compares the caller's effective role at the
-        scope against the minimum role the app registered for that action.
+        Deny by default: an action the app did not declare is refused with
+        `reason: no_policy`. A declared action is tested against the kind of
+        credential, then what the credential is limited to, then the role; the
+        first failure is the reason. Prefer `/authz/permissions` when a request
+        checks more than one thing.
+
+        From a person's token the question is about that person, holding their
+        session; naming another user or describing a credential answers `403`.
+        A service may send `user_id` (the person it serves) with `credential`
+        (what they presented), or `credential.kind: org_key` with the key's
+        `role`; with neither it asks about itself.
       requestBody:
         required: true
         content:
@@ -629,8 +638,9 @@ paths:
               properties:
                 app: { type: string }
                 action: { type: string }
-                scope_id: { type: string }
-                user_id: { type: string, description: Defaults to the caller }
+                scope_id: { type: string, description: "An organization (id, slug or short id) or any scope under one" }
+                user_id: { type: string, description: Service tokens only when it is not the caller }
+                credential: { $ref: "#/components/schemas/Credential" }
       responses:
         "200":
           description: Decision
@@ -638,8 +648,54 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [allowed, role]
                 properties:
-                  allow: { type: boolean }
+                  allowed: { type: boolean }
+                  role: { type: string, description: "The role the decision used: a member's, a key's, `service`, or `none`" }
+                  min_role: { $ref: "#/components/schemas/Role" }
+                  reason:
+                    type: string
+                    enum: [no_policy, insufficient_role, insufficient_scope, person_only, session_only, service_not_allowed]
+        "400": { description: "An `org_key` without a role, or a credential with no `user_id`" }
+        "403": { description: A person asked about somebody else, or described a credential }
+
+  /authz/permissions:
+    post:
+      tags: [pdp]
+      summary: Everything this principal may do in an app, here
+      description: |
+        `/authz/check` for every action the app declared, in one answer. A
+        service asks once per principal and organization, keeps the answer for
+        a few seconds, and tests names against it (`can()` in
+        `@baseworks/core/permissions`). Who may ask about whom is as for
+        `/authz/check`. A non-member gets an empty list, not an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app, scope_id]
+              properties:
+                app: { type: string }
+                scope_id: { type: string }
+                user_id: { type: string, description: Service tokens only when it is not the caller }
+                credential: { $ref: "#/components/schemas/Credential" }
+      responses:
+        "200":
+          description: The permission set
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [app, scope_id, role, permissions]
+                properties:
+                  app: { type: string }
+                  scope_id: { type: string, description: The organization's id }
+                  role: { type: string }
+                  permissions: { type: array, items: { type: string } }
+        "400": { description: "An `org_key` without a role, or a credential with no `user_id`" }
+        "403": { description: A person asked about somebody else, or described a credential }
 
   /apps:
     get:
@@ -673,9 +729,15 @@ paths:
                 origin: { type: string }
                 actions:
                   type: object
-                  additionalProperties: { $ref: "#/components/schemas/Role" }
+                  description: "Every action the app has. The record becomes equal to this: changed actions are updated, missing ones removed."
+                  additionalProperties:
+                    oneOf:
+                      - { $ref: "#/components/schemas/Role" }
+                      - { $ref: "#/components/schemas/ActionSpec" }
       responses:
         "201": { description: Registered }
+        "400": { description: A manifest field this service does not know }
+        "403": { description: The caller is not the app itself }
 
   /apps/{name}/policies:
     parameters:
@@ -694,6 +756,23 @@ components:
       bearerFormat: JWT
 
   schemas:
+    ActionSpec:
+      type: object
+      required: [min_role]
+      additionalProperties: false
+      properties:
+        min_role: { $ref: "#/components/schemas/Role" }
+        access: { type: string, enum: [read, write], default: write, description: "A credential limited to `read` cannot do a `write` action" }
+        requires: { type: string, enum: [person, session], description: "`person`: never an organization's key. `session`: a signed-in person, never any token" }
+        services: { type: array, items: { type: string }, description: Service identities that may do it as themselves }
+    Credential:
+      type: object
+      description: What the principal is holding, as the service that verified it knows it. Service callers only.
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [session, token, org_key] }
+        scopes: { type: array, items: { type: string, enum: [read, write] }, description: "Absent: no limit beyond the role" }
+        role: { allOf: [{ $ref: "#/components/schemas/Role" }], description: "For `org_key`: the role the key acts with" }
     Role:
       type: string
       enum: [owner, admin, member, viewer]

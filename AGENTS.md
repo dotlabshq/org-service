@@ -26,10 +26,20 @@ Deploy model: a lego piece. Any app that installs `@baseworks/sdk` +
 
 A capability is **api, ui, cli and mcp**, and this repository owns all four.
 Inside the process: **`/api`** for the API (published at `/v1/org`), **`/ui`**
-for pages (published at `/org`; none yet), and a **root that is not
-published** (`/healthz`, internal routes such as `/all-orgs`).
+for pages (published at `/org`), and a **root that is not published**
+(`/healthz`, internal routes such as `/all-orgs`).
 
 - A new endpoint goes in a router mounted under `/api`, and in `openapi.yaml`.
+- **A page is a client of the API.** `src/routes/pages.ts` fetches through `api`
+  with the person's token and `src/pages/org.ts` draws the answer. Never read
+  the store from a page, and never put a permission rule in one: the rule goes
+  in the API route, where a product calling the API meets it too.
+- A new screen: a function in `src/pages/org.ts`, a route in
+  `src/routes/pages.ts`, its sentences in `src/pages/strings.ts` in **every**
+  language there. The frame and stylesheet are `@baseworks/core/pages`, shared
+  with auth-service; change the look there.
+- Products do not write organization screens. If one needs something these
+  pages lack, it is added here.
 - A route meant only for other services goes in `src/routes/internal.ts`,
   mounted at the root and never under `/api`.
 - Never write `/v1` or `/org` in service code. Where the gateway publishes the

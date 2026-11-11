@@ -8,16 +8,19 @@ nothing else; **roles live here**, and a caller asks for them.
 
 **In the local realm:** port 3006, published by the gateway at `/v1/org`.
 
-**Where it stands (0.9.0, 2026-11-11).** org is moving onto the workspace's
-four-layer layout ([ADR 0003](../../docs/adr/0003-service-surfaces.md)), one
-safe step at a time:
+**Where it stands (0.10.0, 2026-11-11).** org is on the workspace's
+four-layer layout ([ADR 0003](../../docs/adr/0003-service-surfaces.md)) except
+for the last, breaking step of the API move:
 
 | Layer | State |
 |---|---|
-| **api** | Mounted under `/api` as of 0.9.0. The root and `/v1` mounts remain for callers that reach the service directly; they are removed in a later release |
-| **ui** | No pages and no screens package yet. The organization screen is still inside the console (`apps/console`). Planned: pages under `/ui` for accepting an invitation and for choosing or creating an organization; screens in `@baseworks/org/ui` |
+| **api** | Mounted under `/api`. The root and `/v1` mounts remain for callers that reach the service directly; they are removed in a later release |
+| **ui** | **Pages under `/ui`, published at `/org`** (0.10.0): choose, create, members, invitations, accept an invitation, settings. A product links to them and writes no organization screen of its own — [Pages](#pages) |
 | **cli** | `@baseworks/org/cli`, mounted by `bw` |
 | **mcp** | None yet. Planned: `@baseworks/org/mcp`, tool definitions an application adds to its own MCP server |
+
+Not built, and waiting on a decision: per-organization permission overrides
+(the policy table is global per app today).
 From the workspace root: `just start org` · `just logs org` · `just restart org`.
 See the workspace [README](../../README.md) for the whole map and
 [AGENTS.md](../../AGENTS.md) for the rules every service here follows.
@@ -193,7 +196,7 @@ Three things are **not** under `/api`, on purpose:
   so it is for services on the same network only. No gateway rule maps
   anything to the root, which is what keeps it unpublished; the service-token
   check is what guards it in any case.
-- Pages, when there are some — under `/ui`, published at `/org`.
+- Pages — under `/ui`, published at `/org` ([below](#pages)).
 
 **Still served, and going away:** the same API at the root (`/orgs`,
 `/authz/role`, ...) and under `/v1` (`/v1/orgs`). The product services, the
@@ -203,6 +206,69 @@ gateway that still strips `/v1/org` lands there too. Point a direct caller at
 given, so that is a configuration change, not a code change. The root and
 `/v1` API mounts are removed once nothing uses them, and that release is the
 breaking one.
+
+## Pages
+
+Everything a person does with an organization, served by this service. **A
+product does not write these screens; it links to them** on its own host, and
+its gateway sends `/org/*` to this service's `/ui`:
+
+```toml
+# flect.toml
+expose = [
+  { path = "/org",    to = "/ui"  },
+  { path = "/v1/org", to = "/api" },
+]
+```
+
+| Published | Who | |
+|---|---|---|
+| `/org/choose` | anyone signed in | Their organizations and pending invitations; pick one, or create one |
+| `/org/new` | anyone signed in | Create an organization; the creator is its owner |
+| `/org/<ref>/members` | a member reads; owner or admin writes | Roles, removal. `<ref>` is the slug, id or short id |
+| `/org/<ref>/invitations` | owner or admin | Invite by email and role, see what is pending, withdraw |
+| `/org/invitations/<id>` | the invitee | Accept or decline |
+| `/org/<ref>/settings` | owner or admin; delete is the owner's | Name; delete, by typing the address |
+
+**Linking to them.** Add `returnTo` — a path, or an absolute URL on an origin
+the realm publishes (`APP_PUBLIC_URL`, `ORG_RETURN_ORIGINS`):
+
+- every page then shows **"← Back to <product>"** leading there, and the way
+  back survives each tab and form;
+- choosing, creating or joining an organization **returns to it with
+  `org=<id>` added**, so the product can make that its active organization.
+  Without `returnTo` the person lands on the members page instead.
+
+`?lang=tr` and `?theme=dark` set the language (English, Turkish) and the theme
+once; they are remembered in a cookie on the host (`bw_lang`, `bw_theme`) and
+shared with auth-service's pages.
+
+**How they work, which is also what they guarantee.**
+
+- *A page is a client of this service's own API.* Each read and write goes
+  through `/api` in-process with the person's token. The pages add no rule and
+  can skip none: a hidden control is hidden for tidiness, and a form posted by
+  hand is refused by the same check that refuses an API call.
+- *The session is auth-service's.* Sign-in leaves the realm's identity token in
+  the `oidc_token` cookie on the host; this service verifies it like any bearer.
+  No token: off to `<ORG_AUTH_UI_URL>/login?returnTo=<this page>`. The service
+  needs no address for auth-service, only the realm's keys it already has.
+- *Writes are forms; there is no script.* The cookie is `SameSite=Lax`, so a
+  form posted from another site arrives without it. Each write redirects back
+  with `?ok=` or `?err=`, a code the page turns into a sentence and never echoes.
+- *One look with the sign-in page.* The frame, stylesheet, branding and the
+  `returnTo` rule are `@baseworks/core/pages`, which auth-service uses too.
+
+`new`, `choose` and `invitations` are page names, so an organization with one
+of those slugs cannot be opened by slug here (its id still works).
+
+| Variable | Meaning |
+|---|---|
+| `APP_PUBLIC_URL` | The origin the browser is on. Unset, links are root-relative |
+| `ORG_UI_PATH` | Where the gateway publishes `/ui`; default `/org`. Standalone on a port: `/ui` |
+| `ORG_AUTH_UI_URL` | auth-service's pages; default `/auth` on the same host |
+| `ORG_RETURN_ORIGINS` | Extra origins `returnTo` may point at, comma-separated |
+| `REALM_UI_NAME` · `_LOGO_URL` · `_HOME_URL` · `_TERMS_URL` · `_PRIVACY_URL` · `_ACCENT` | Branding, shared with auth-service's pages. `ORG_UI_*` overrides for this service alone |
 
 ## Rules worth knowing before you call it
 

@@ -6,6 +6,7 @@ import { scopesRouter } from './routes/scopes.js'
 import { authzRouter } from './routes/authz.js'
 import { appsRouter } from './routes/apps.js'
 import { internalRouter } from './routes/internal.js'
+import { pagesRouter } from './routes/pages.js'
 import { StoreError, createStore } from './store.js'
 import { serviceManifest } from '@baseworks/core/service'
 import { readFileSync } from 'node:fs'
@@ -27,6 +28,17 @@ export async function registerDefinitions(fb: FoldBase): Promise<void> {
   for (const p of POLICIES) await fb.putPolicy(p)
 }
 
+/** A store's refusal becomes its own status and code; anything else is a 500 that says nothing. */
+const onError = (err: Error, c: Context) => {
+  if (err instanceof StoreError) return c.json({ error: err.code, message: err.message }, err.status as never)
+  const status = (err as { status?: number }).status
+  if (typeof status === 'number' && status >= 400 && status < 600) {
+    return c.json({ error: (err as { code?: string }).code ?? 'error', message: err.message }, status as never)
+  }
+  console.error(err)
+  return c.json({ error: 'internal', message: 'Internal server error' }, 500)
+}
+
 /** Build the org-service Hono app over a foldbase client. */
 export function createApp(fb: FoldBase): Hono {
   const store = createStore(fb)
@@ -38,7 +50,8 @@ export function createApp(fb: FoldBase): Hono {
   //
   //   /api   the API — what a gateway publishes at `/v1/org`, replacing the
   //          prefix. Discovery and the contract are part of it.
-  //   /ui    pages — none yet; published at `/org` when there are.
+  //   /ui    pages — choose, create, members, invitations, settings; published
+  //          at `/org`. They are clients of `api`, with the person's token.
   //   /      not published: `/healthz` and the internal routes.
   //
   // The service never encodes where it is published or under which version.
@@ -80,7 +93,11 @@ export function createApp(fb: FoldBase): Hono {
 
   const routers = [orgsRouter(store), scopesRouter(store), authzRouter(store), appsRouter(store)]
   for (const r of routers) api.route('/', r)
+  // The pages reach `api` directly, so it carries the error handler itself.
+  api.onError(onError)
   app.route('/api', api)
+
+  app.route('/ui', pagesRouter(api, { mount: '/ui' }))
 
   // Internal: at the root only, never under `/api`.
   const internal = internalRouter(store)
@@ -100,15 +117,7 @@ export function createApp(fb: FoldBase): Hono {
   app.route('/v1', internal)
   app.route('/', internal)
 
-  app.onError((err, c) => {
-    if (err instanceof StoreError) return c.json({ error: err.code, message: err.message }, err.status as never)
-    const status = (err as { status?: number }).status
-    if (typeof status === 'number' && status >= 400 && status < 600) {
-      return c.json({ error: (err as { code?: string }).code ?? 'error', message: err.message }, status as never)
-    }
-    console.error(err)
-    return c.json({ error: 'internal', message: 'Internal server error' }, 500)
-  })
+  app.onError(onError)
 
   return app
 }

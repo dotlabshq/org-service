@@ -315,5 +315,9 @@ export function pagesRouter(api: Hono, opts: { mount: string }) {
     return after(c, `${slugOf(org)}/members`, {})
   })
 
+  // Anything else under /ui is not a page. Said here, so the request does not
+  // fall through to the API mounts and come back as a JSON 401.
+  app.all('*', (c) => c.text('Not Found', 404))
+
   return app
 }

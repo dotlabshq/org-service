@@ -275,5 +275,7 @@ describe('one system with the sign-in page', () => {
     const res = await browser(OWNER).get('/ui/orgs')
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toContain('text/html')
+    // And a path that is no page at all is a plain 404, not the API's 401.
+    expect((await browser(OWNER).get('/ui/acme/no/such/page')).status).toBe(404)
   })
 })

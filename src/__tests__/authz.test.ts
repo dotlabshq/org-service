@@ -51,17 +51,29 @@ describe('PDP — app registry', () => {
     expect(apps.map((a) => a.name)).toContain('flect')
   })
 
-  it('re-register only fills gaps — an existing policy is not overwritten', async () => {
+  it('the manifest is the app\'s rule set: re-registering updates, adds and removes', async () => {
     await setup()
     await app.post('/_/apps/register', MANIFEST, FLECT)
-    // deploy already has a policy (member); a manifest that would default it to
-    // owner must NOT change it (admin overrides survive redeploys).
-    await app.post('/_/apps/register', { ...MANIFEST, actions: { deploy: 'owner' } }, FLECT)
+    // The app tightens one rule, adds an action, and drops another.
+    await app.post('/_/apps/register', { ...MANIFEST, actions: { deploy: 'owner', 'logs.read': 'viewer' } }, FLECT)
 
     const { policies } = await json<{ policies: Array<{ action: string; min_role: string }> }>(
       await app.get('/apps/flect/policies'),
     )
-    expect(policies.find((p) => p.action === 'deploy')!.min_role).toBe('member')
+    expect(policies.map((p) => [p.action, p.min_role]).sort()).toEqual([['deploy', 'owner'], ['logs.read', 'viewer']])
+    // What it dropped is not left open: it is nobody's again.
+    const { orgId } = { orgId: (await json<{ orgs: Array<{ id: string }> }>(await app.get('/v1/orgs'))).orgs[0]!.id }
+    expect(await json(await app.post('/authz/check', { app: 'flect', action: 'db.manage', scope_id: orgId })))
+      .toMatchObject({ allowed: false, reason: 'no_policy' })
+  })
+
+  it('registering the same manifest again writes nothing', async () => {
+    await setup()
+    await app.post('/_/apps/register', MANIFEST, FLECT)
+    const first = (await json<{ policies: Array<{ action: string; updated_at: number }> }>(await app.get('/apps/flect/policies'))).policies
+    await app.post('/_/apps/register', MANIFEST, FLECT)
+    const second = (await json<{ policies: Array<{ action: string; updated_at: number }> }>(await app.get('/apps/flect/policies'))).policies
+    expect(second).toEqual(first)
   })
 })
 

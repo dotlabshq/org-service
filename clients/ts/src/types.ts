@@ -62,6 +62,10 @@ export interface AppPolicyRow {
   app: string
   action: string
   min_role: Role
+  /** Null on a row written before 0.12 (PolicySet): read as `write`, anyone, no service. */
+  access?: string | null
+  requires?: string | null
+  services?: string | null
   created_at: number
   updated_at: number
 }
@@ -142,20 +146,82 @@ export interface RegisteredApp {
   updated_at: number
 }
 
+/** Whether an action only looks, or changes something. What a credential's scope is matched against. */
+export type Access = 'read' | 'write'
+
+/**
+ * A limit on the *kind of credential*, whatever the role:
+ * `person` — a person's own credential (their session or their personal token),
+ * never an organization's key; `session` — a person who signed in, never any
+ * token (so a leaked token cannot, say, mint more tokens).
+ */
+export type Requires = 'person' | 'session'
+
+/** What one action asks for. */
+export interface ActionSpec {
+  /** The least role that may do it. Built-in roles are ordered: viewer < member < admin < owner. */
+  min_role: Role
+  /** Default `write`. A credential scoped to `read` cannot do a `write` action. */
+  access?: Access
+  requires?: Requires
+  /**
+   * Service identities that may do this as themselves, with no person
+   * involved (a webhook, a scheduled job). Empty by default: a service gets
+   * nothing it was not named for.
+   */
+  services?: string[]
+}
+
 export interface AppPolicy {
   id: string
   app: string
   action: string
   min_role: Role
+  access: Access
+  requires?: Requires
+  services: string[]
   created_at: number
   updated_at: number
 }
 
-/** An app's boot-time policy manifest: action → minimum role. */
+/**
+ * An app's manifest: every action it has and what each asks for. `"admin"` is
+ * short for `{ min_role: "admin" }`. Registering makes org-service's record of
+ * the app equal to this — changed actions are updated, missing ones removed.
+ */
 export interface AppManifest {
   name: string
   origin: string
-  actions: Record<string, Role>
+  actions: Record<string, Role | ActionSpec>
+}
+
+/**
+ * What the caller is holding, as the service that verified it knows it. Only a
+ * service may state this; from a person's own token the credential is their
+ * session.
+ */
+export interface Credential {
+  /** `session`: a signed-in person. `token`: a person's API token. `org_key`: an organization's key, no person. */
+  kind: 'session' | 'token' | 'org_key'
+  /** What a token or key is limited to. Absent: no limit beyond the role. */
+  scopes?: Access[]
+  /** For `org_key` only: the role the key acts with. */
+  role?: Role
+}
+
+/**
+ * Everything one principal may do in one app at one organization — the answer
+ * a service fetches once and keeps briefly, then tests with `can()`
+ * (`@baseworks/core/permissions`). org-service evaluated it; holding it is not
+ * deciding.
+ */
+export interface PermissionSet {
+  app: string
+  /** The organization the answer is for (the resolved id). */
+  scope_id: string
+  /** The role that produced it: a member's role, a key's, `service`, or `none`. */
+  role: Role | 'none' | 'service'
+  permissions: string[]
 }
 
 /** The effective role a user holds at a scope (org role, inherited downward). */
@@ -168,13 +234,16 @@ export interface EffectiveRole {
 /** The PDP verdict for one `check`. */
 export interface CheckResult {
   allowed: boolean
-  role: Role | 'none'
+  role: Role | 'none' | 'service'
   /** What the action asks for, as the app declared it. Absent with `no_policy`. */
   min_role?: Role
   /**
    * Why not. `no_policy`: the app declared nothing for this action (or
    * registered no manifest), so nobody may do it. `insufficient_role`: it is
-   * declared, and this person's role is below it.
+   * declared, and this person's role is below it. `insufficient_scope`: the
+   * credential is limited to reading and this writes. `person_only` /
+   * `session_only`: the action is closed to this kind of credential.
+   * `service_not_allowed`: a service asked as itself and is not named for it.
    */
-  reason?: 'no_policy' | 'insufficient_role'
+  reason?: 'no_policy' | 'insufficient_role' | 'insufficient_scope' | 'person_only' | 'session_only' | 'service_not_allowed'
 }

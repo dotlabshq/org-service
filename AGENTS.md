@@ -43,18 +43,21 @@ for pages (published at `/org`), and a **root that is not published**
 - A route meant only for other services goes in `src/routes/internal.ts`,
   mounted under **`/_`** and never under `/api`. It still checks who is calling
   (`mayRegisterApp`, a service token): the network is not a trust boundary.
-- **The PDP's rules of thumb:** an app's actions come from the manifest it
-  registers as itself; an undeclared action is refused (`no_policy`), never
-  defaulted; a person asks only
-  about themselves, a service may ask about anyone. Roles go through
+- **The PDP, in one breath:** an app's actions come from the manifest it
+  registers as itself, and the manifest is authoritative for them; an
+  undeclared action is refused (`no_policy`), never defaulted; a decision is
+  about a *principal* — a person with a credential, an organization's key, or
+  a service — and the route (`principal()` in `src/routes/authz.ts`) builds
+  that from the caller's token, never from a person's say-so; a credential
+  only limits; `verdict()` in `src/store.ts` is the one place the decision is
+  made, used by both `check` and `permissions`. Roles go through
   `withRoleCache` (`src/lib/role-cache.ts`), which wraps the store so that no
   route has to remember to invalidate — add a new membership write to its
   `WRITES` list.
-- Never write `/v1` or `/org` in service code. Where the gateway publishes the
-  service is configuration.
-- The root and `/v1` API mounts in `src/app.ts` are legacy, kept for direct
-  callers. Do not add to them, and do not remove them in passing: the product
-  services, the flect broker and clave ask the root today.
+- **Services never look at a role.** They fetch `permissions` and call `can()`.
+  A route in a product service that says `role === 'admin'` is a rule in the
+  wrong place. (This service's own routes still gate on roles in code; moving
+  them onto its own manifest is planned, not done.)
 - Where each layer stands is in the README, at the top.
 
 ## The three packages
@@ -143,8 +146,9 @@ delete resolves by **slug OR shortId**.
   - `check(app, action, scope, user)` — deny-by-default: allowed only when the
     app declared the action and the user's effective role is at least its
     minimum. Rank `viewer<member<admin<owner`.
-  - `registerManifest` inserts defaults only for actions **without** a policy, so
-    explicit overrides survive redeploys.
+  - `registerManifest` makes the record equal to the manifest: updates, adds,
+    removes. What an organization changes for itself (clave #164) will be a
+    separate layer that registration does not touch.
 - **routes/** preserve the REST surface (`/v1/orgs…`, `/authz/role`,
   `/authz/check`, `/apps…`) so the CLI is unaffected.
 

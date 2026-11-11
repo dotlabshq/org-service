@@ -96,6 +96,16 @@ export const readAppPolicies = defineProjection('app_policies', AppPolicyEvents,
     min_role: e.minRole,
     created_at: e.at,
   })),
+  PolicyDeclared: on.PolicyDeclared.upsert((e) => ({
+    app: e.app,
+    action: e.action,
+    min_role: e.minRole,
+    access: e.access,
+    requires: e.requires,
+    services: e.services,
+    created_at: e.at,
+  })),
+  PolicyRemoved: on.PolicyRemoved.delete(),
 }))
 
 export const PROJECTIONS = [readOrgs, readScopes, readOrgMembers, readOrgInvitations, readApps, readAppPolicies] as const

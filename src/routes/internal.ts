@@ -39,6 +39,19 @@ export function mayRegisterApp(name: string, caller: { userId: string; tokenType
   return false
 }
 
+/** What one action asks for: a least role alone (`"admin"`), or the whole of it. */
+const ActionSpec = z.union([
+  Role,
+  z.object({
+    min_role: Role,
+    access: z.enum(['read', 'write']).optional(),
+    requires: z.enum(['person', 'session']).optional(),
+    // A service identity is a client id: no commas, because the list is stored as one string.
+    services: z.array(z.string().min(1).regex(/^[^,\s]+$/)).optional(),
+  }).strict(),
+])
+const Manifest = z.object({ name: z.string().min(1), origin: z.string().min(1), actions: z.record(ActionSpec) })
+
 /**
  * Routes for other services on the same network, and for nobody else.
  *
@@ -66,12 +79,12 @@ export function internalRouter(store: Store) {
 
   /**
    * An app declares its actions and what each one asks for. Called by the app
-   * at boot, idempotently: a default is written only for an action that has no
-   * policy yet, so a later change made on purpose survives a redeploy.
+   * at boot, idempotently. The manifest is authoritative for the app's own
+   * rules: what it changed is updated, what it dropped is removed.
    */
   app.post(
     '/apps/register',
-    zValidator('json', z.object({ name: z.string().min(1), origin: z.string().min(1), actions: z.record(Role) })),
+    zValidator('json', Manifest),
     async (c) => {
       const auth = c.get('auth')
       const manifest = c.req.valid('json')

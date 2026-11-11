@@ -18,8 +18,28 @@ import type {
   AppManifest,
   EffectiveRole,
   CheckResult,
+  Credential,
+  PermissionSet,
 } from '@baseworks/org'
 import { generateShortId, generateSlug } from '@baseworks/core'
+
+/**
+ * Who a decision is about.
+ *
+ *  · a **person**, with what they are holding: their session or one of their
+ *    own tokens;
+ *  · a **key** that belongs to an organization and stands in for no person,
+ *    acting with the role its issuer gave it;
+ *  · a **service** acting as itself, with nobody behind the request.
+ *
+ * The route builds this from the caller's token and, for a service caller,
+ * from what it says about the credential it verified. Nothing below trusts a
+ * person's word about their own credential.
+ */
+export type Principal =
+  | { kind: 'person'; userId: string; credential: Credential }
+  | { kind: 'key'; credential: Credential }
+  | { kind: 'service'; identity: string }
 
 /**
  * The org domain, expressed over foldbase. This is the owning-app logic
@@ -567,15 +587,17 @@ export function createStore(fb: FoldBase) {
    * that asks the PDP, while a console sending the id was not: the same
    * membership, two answers, depending on which spelling arrived.
    */
-  async function effectiveRole(userId: string, scopeId: string): Promise<EffectiveRole> {
-    let orgId: string
+  /** The organization a scope belongs to: an org by id, slug or short id, or any scope under one. */
+  async function orgOfScope(scopeId: string): Promise<string> {
     const org = await orgRowByRef(scopeId)
-    if (org) orgId = org.id
-    else {
-      const scope = (await scopeRowById(scopeId)) ?? (await scopeRowByShortId(scopeId))
-      if (!scope) throw new StoreError(404, 'not_found', `scope not found: ${scopeId}`)
-      orgId = scope.org_id
-    }
+    if (org) return org.id
+    const scope = (await scopeRowById(scopeId)) ?? (await scopeRowByShortId(scopeId))
+    if (!scope) throw new StoreError(404, 'not_found', `scope not found: ${scopeId}`)
+    return scope.org_id
+  }
+
+  async function effectiveRole(userId: string, scopeId: string): Promise<EffectiveRole> {
+    const orgId = await orgOfScope(scopeId)
     const role = await roleOf(orgId, userId)
     return role ? { role, via: { scope_id: orgId, scope_kind: 'org' } } : { role: 'none' }
   }
@@ -583,8 +605,14 @@ export function createStore(fb: FoldBase) {
   const toApp = (r: AppRow): RegisteredApp => ({
     id: r.id, name: r.name, origin: r.origin, created_at: r.created_at, updated_at: r.updated_at,
   })
+  // A row written before 0.12 has only a least role: it reads as a write that
+  // anyone with the role may do and no service may.
   const toPolicy = (r: AppPolicyRow): AppPolicy => ({
-    id: r.id, app: r.app, action: r.action, min_role: r.min_role, created_at: r.created_at, updated_at: r.updated_at,
+    id: r.id, app: r.app, action: r.action, min_role: r.min_role,
+    access: r.access === 'read' ? 'read' : 'write',
+    ...(r.requires === 'person' || r.requires === 'session' ? { requires: r.requires } : {}),
+    services: (r.services ?? '').split(',').map((v) => v.trim()).filter(Boolean),
+    created_at: r.created_at, updated_at: r.updated_at,
   })
 
   async function appRowByName(name: string): Promise<AppRow | null> {
@@ -600,9 +628,21 @@ export function createStore(fb: FoldBase) {
   }
 
   /**
-   * Boot-time registration: upsert the app (origin refreshed) and insert
-   * defaults ONLY for actions that have no policy yet — explicit admin overrides
-   * survive redeploys.
+   * Boot-time registration: make this service's record of the app equal to
+   * its manifest.
+   *
+   * The manifest is the app's own statement of what its actions ask for, so
+   * it is authoritative: a changed action is updated (an app that tightens
+   * `deal.delete` from admin to owner gets owner), a new one is added, and one
+   * that left the manifest is removed, which makes it `no_policy` — refused.
+   * Until 0.12 this only filled gaps, to keep "an admin's override" safe
+   * across redeploys; but nothing could make such an override, and the effect
+   * was that an app could never tighten its own rule. What an organization
+   * changes for itself (clave #164) will live in a layer of its own, which
+   * registration does not touch.
+   *
+   * Idempotent: registering the same manifest twice writes nothing the second
+   * time.
    */
   async function registerManifest(manifest: AppManifest, actor: string): Promise<RegisteredApp> {
     const now = Date.now()
@@ -615,11 +655,34 @@ export function createStore(fb: FoldBase) {
       const id = AppEvents.newId()
       await apps.emit(id, 0, 'AppRegistered', { name: manifest.name, origin: manifest.origin, at: now }, { actor })
     }
-    for (const [action, minRole] of Object.entries(manifest.actions)) {
-      if (!(await policyRow(manifest.name, action))) {
-        const pid = AppPolicyEvents.newId()
-        await policies.emit(pid, 0, 'PolicySet', { app: manifest.name, action, minRole, at: now }, { actor })
+
+    const before = new Map((await q.query<AppPolicyRow>('app_policies', { where: { app: { eq: manifest.name } } })).rows.map((r) => [r.action, r]))
+    for (const [action, declared] of Object.entries(manifest.actions)) {
+      const spec = typeof declared === 'string' ? { min_role: declared } : declared
+      const want = {
+        app: manifest.name,
+        action,
+        minRole: spec.min_role,
+        access: spec.access ?? 'write',
+        requires: spec.requires ?? '',
+        services: [...new Set(spec.services ?? [])].sort().join(','),
+        at: now,
+      } as const
+      const row = before.get(action)
+      before.delete(action)
+      if (!row) {
+        await policies.emit(AppPolicyEvents.newId(), 0, 'PolicyDeclared', want, { actor })
+        continue
       }
+      const same = row.min_role === want.minRole
+        && (row.access ?? 'write') === want.access
+        && (row.requires ?? '') === want.requires
+        && [...new Set((row.services ?? '').split(',').filter(Boolean))].sort().join(',') === want.services
+      if (!same) await policies.emit(row.id, await version(row.id), 'PolicyDeclared', want, { actor })
+    }
+    // What is left was declared once and is not any more.
+    for (const row of before.values()) {
+      await policies.emit(row.id, await version(row.id), 'PolicyRemoved', { at: now }, { actor })
     }
     return toApp((await appRowByName(manifest.name))!)
   }
@@ -647,30 +710,76 @@ export function createStore(fb: FoldBase) {
     return res.rows.map(toPolicy)
   }
 
-  /** The PDP: may `userId` perform `action` of `app` at `scopeId`? Deny-by-default. */
   /**
-   * May this person do this action here?
+   * One action against one principal: the whole decision, in one place.
    *
-   * An app says what each of its actions needs in the manifest it registers
-   * (`deals.create: member`, `deals.delete: admin`). **An action nobody
-   * declared is refused**, for everyone, with `reason: no_policy` — whether the
-   * app registered no manifest at all or only left this action out. The
-   * manifest is the list of what may be done; an app that wants members to do
-   * something says so (`member`).
+   * An app says what each of its actions needs in the manifest it registers.
+   * **An action nobody declared is refused**, for everyone, with
+   * `reason: no_policy` — whether the app registered no manifest at all or only
+   * left this action out. Refusing is the safe way to be wrong: if an
+   * undeclared action were open to members, an app whose registration failed
+   * at boot, or a new action someone forgot to add, would quietly be open to
+   * the whole organization.
    *
-   * Refusing is the safe way to be wrong. If an undeclared action were open to
-   * members, an app whose registration failed at boot, or a new action someone
-   * forgot to add, would quietly be open to everyone in the organization —
-   * including actions the app meant for owners only.
+   * A declared action is then tested in this order, and the first failure is
+   * the reason given: the kind of credential (a service as itself is allowed
+   * only where it is named; `requires` closes an action to keys, or to
+   * everything but a signed-in person), then what the credential is limited to
+   * (`read` cannot `write`), then the role. A role only ever widens what the
+   * credential's limits leave: nothing here lets a key do more than its scope.
    */
-  async function check(input: { app: string; action: string; userId: string; scopeId: string }): Promise<CheckResult> {
-    const policy = await policyRow(input.app, input.action)
-    const { role } = await effectiveRole(input.userId, input.scopeId)
-    if (!policy) return { allowed: false, role, reason: 'no_policy' }
-    if (!roleAtLeast(role, policy.min_role)) {
-      return { allowed: false, role, min_role: policy.min_role, reason: 'insufficient_role' }
+  function verdict(policy: AppPolicy | undefined, who: Principal, role: Role | 'none'): CheckResult {
+    const shown: Role | 'none' | 'service' = who.kind === 'service' ? 'service' : role
+    if (!policy) return { allowed: false, role: shown, reason: 'no_policy' }
+    const base = { role: shown, min_role: policy.min_role }
+
+    if (who.kind === 'service') {
+      return policy.services.includes(who.identity)
+        ? { allowed: true, ...base }
+        : { allowed: false, ...base, reason: 'service_not_allowed' }
     }
-    return { allowed: true, role, min_role: policy.min_role }
+    if (policy.requires === 'session' && (who.kind === 'key' || who.credential.kind !== 'session')) {
+      return { allowed: false, ...base, reason: 'session_only' }
+    }
+    if (policy.requires === 'person' && who.kind === 'key') {
+      return { allowed: false, ...base, reason: 'person_only' }
+    }
+    const scopes = who.credential.scopes
+    if (scopes && !(policy.access === 'read' ? scopes.includes('read') || scopes.includes('write') : scopes.includes('write'))) {
+      return { allowed: false, ...base, reason: 'insufficient_scope' }
+    }
+    if (!roleAtLeast(role, policy.min_role)) return { allowed: false, ...base, reason: 'insufficient_role' }
+    return { allowed: true, ...base }
+  }
+
+  /** The role a principal acts with at a scope, and the organization that scope is in. */
+  async function roleAt(who: Principal, scopeId: string): Promise<{ orgId: string; role: Role | 'none' }> {
+    const orgId = await orgOfScope(scopeId)
+    if (who.kind === 'service') return { orgId, role: 'none' }
+    // A key has no membership: it acts with the role its issuer gave it.
+    if (who.kind === 'key') return { orgId, role: who.credential.role ?? 'none' }
+    return { orgId, role: (await effectiveRole(who.userId, scopeId)).role }
+  }
+
+  /** May this principal do this action here? Deny-by-default. */
+  async function check(input: { app: string; action: string; scopeId: string; principal: Principal }): Promise<CheckResult> {
+    const { role } = await roleAt(input.principal, input.scopeId)
+    const row = await policyRow(input.app, input.action)
+    return verdict(row ? toPolicy(row) : undefined, input.principal, role)
+  }
+
+  /**
+   * Everything this principal may do in this app here: `check` for every
+   * action the app declared, in one answer. A service fetches this once per
+   * principal and organization, keeps it briefly, and tests it locally — the
+   * deciding was done here.
+   */
+  async function permissions(input: { app: string; scopeId: string; principal: Principal }): Promise<PermissionSet> {
+    const { orgId, role } = await roleAt(input.principal, input.scopeId)
+    const allowed = (await listPolicies(input.app))
+      .filter((policy) => verdict(policy, input.principal, role).allowed)
+      .map((policy) => policy.action)
+    return { app: input.app, scope_id: orgId, role: input.principal.kind === 'service' ? 'service' : role, permissions: allowed }
   }
 
   return {
@@ -683,7 +792,7 @@ export function createStore(fb: FoldBase) {
     // scopes
     listScopes, scopeByRef, scopeInOrgByRef, createScope, updateScope, archiveScope, provisionDefaults,
     // PDP
-    effectiveRole, check, registerManifest, setPolicy, listApps, listPolicies,
+    effectiveRole, check, permissions, registerManifest, setPolicy, listApps, listPolicies,
     // helpers
     toScope,
     _PARENT_KIND: PARENT_KIND,

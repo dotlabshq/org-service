@@ -8,7 +8,7 @@ nothing else; **roles live here**, and a caller asks for them.
 
 **In the local realm:** port 3006, published by the gateway at `/v1/org`.
 
-**Where it stands (0.11.0, 2026-11-11).** org is on the workspace's
+**Where it stands (0.12.0, 2026-11-11).** org is on the workspace's
 four-layer layout ([ADR 0003](../../docs/adr/0003-service-surfaces.md)) except
 for the last, breaking step of the API move:
 
@@ -212,35 +212,99 @@ breaking one.
 ## Apps, actions, and who may do what
 
 Membership is one role per person per organization: `owner`, `admin`, `member`,
-`viewer`. What that role lets them do **in a given product** is that product's
-own rule set, and org-service is where it is kept and decided.
+`viewer`. What that lets someone do **in a given product** is that product's own
+rule set, and org-service is where it is kept and decided. Nothing is decided
+in the product, and nothing in a token.
 
-**An app declares its actions.** At boot it registers a manifest: each action
-and the least role that may do it.
+The model is the one Django uses, with other names:
+
+| Django | Here |
+|---|---|
+| A permission (`app.delete_deal`), created from the app's models | An **action** (`deal.delete`), declared in the app's manifest |
+| A group: a set of permissions | A **role**: owner, admin, member, viewer. (Custom roles per organization: clave #164) |
+| `user.has_perm(...)`; code never names a group | `can(set, 'deal.delete')`; **code never names a role** |
+
+### An app declares its actions
+
+At boot it registers a manifest: every action it has, and what each asks for.
 
 ```ts
 await org.registerApp({
   name: 'quillpath',
   origin: 'https://quillpath.example',
-  actions: { 'deals.create': 'member', 'deals.delete': 'admin', 'billing.manage': 'owner' },
+  actions: {
+    'deal.read':         { min_role: 'viewer', access: 'read' },
+    'deal.create':       'member',                                  // short for { min_role: 'member' }
+    'deal.delete':       'admin',
+    'suggestion.decide': { min_role: 'member', requires: 'person' },
+    'apikey.create':     { min_role: 'admin',  requires: 'session' },
+    'payment.record':    { min_role: 'owner',  services: ['stripe-service'] },
+  },
 })
 ```
 
-**Then it asks.** `POST /authz/check { app, action, scope_id }` answers
-`{ allowed, role, min_role }`: allowed when the person's role in that
-organization is at least the action's.
+| Field | Means | Default |
+|---|---|---|
+| `min_role` | The least role that may. Roles are ordered: viewer < member < admin < owner | required |
+| `access` | `read` or `write`. A credential limited to `read` cannot do a `write` action | `write` |
+| `requires` | `person`: a person's own credential, never an organization's key. `session`: a signed-in person, never any token | anyone |
+| `services` | Service identities that may do it as themselves, with nobody behind the request | none |
 
-**An action nobody declared is refused**, for everyone, with
-`reason: no_policy` — no manifest at all, or not this action. The manifest is
-the list of what may be done; what members may do is written there
-(`'deals.create': 'member'`), not assumed. Refusing is the safe way to be wrong:
+**The manifest is the app's rule set.** Registering makes org-service's record
+equal to it: a changed action is updated, a new one added, one that left the
+manifest removed. Registering the same manifest twice writes nothing.
+
+**An action nobody declared is refused**, for everyone, with `no_policy` — no
+manifest at all, or not this action. What members may do is written
+(`'deal.create': 'member'`), not assumed. Refusing is the safe way to be wrong:
 an app whose registration failed at boot, or a new action someone forgot to
 declare, is closed rather than quietly open to the whole organization.
 
-**Only the app itself registers.** `POST /_/apps/register` takes a **service
-token whose identity is the app's name**; a person's token, and another
-service's, get `403`. Otherwise one app could lower another's bar, and so could
-anyone signed in. How the app gets that identity:
+### A service asks once, and looks the answer up
+
+```ts
+import { can } from '@baseworks/core/permissions'
+import { permissionReader } from '@baseworks/org'
+
+const perms = permissionReader({ ttlSeconds: 30 })
+
+// in a request, with the caller's own token on `org`:
+const set = await perms.read(`${userId}:${orgId}`, () => org.permissions({ app: 'quillpath', scopeId: orgId }))
+if (!can(set, 'deal.delete')) return c.json({ error: 'forbidden' }, 403)
+```
+
+`POST /authz/permissions { app, scope_id }` answers
+`{ app, scope_id, role, permissions: [...] }`: every action of the app this
+principal may do in that organization. org-service decided; the service holds
+the answer for a few seconds and tests names against it. One call per person
+and organization instead of one per action, and the same list tells a screen
+which buttons to show. `POST /authz/check` is the same decision for one action,
+with the reason when it is no: `no_policy`, `insufficient_role`,
+`insufficient_scope`, `person_only`, `session_only`, `service_not_allowed`.
+
+A service that cannot reach org-service refuses the request. `can(undefined, …)`
+is `false` on purpose.
+
+### Who the question is about
+
+| Caller's token | The question is about |
+|---|---|
+| A person's | That person, holding their session. They may not name somebody else or describe their credential (`403`) |
+| A service's, with `user_id` | The person it is serving. `credential` says what they presented: `{ kind: 'token', scopes: ['read'] }` |
+| A service's, with `credential.kind: 'org_key'` and `role` | An organization's key, acting with that role. Never a `person` or `session` action |
+| A service's, with neither | The service itself: only the actions that name it in `services` |
+
+**A credential only limits.** A read-only token of an owner may read; nothing
+lets a key do more than its scope, whatever its role. What a key *is* — whose,
+which scopes — is iam-service's to say; the service that verified the key
+passes that on, and org-service decides with it.
+
+### Only the app itself registers
+
+`POST /_/apps/register` takes a **service token whose identity is the app's
+name**; a person's token, and another service's, get `403`. Otherwise one app
+could lower another's bar, and so could anyone signed in. How the app gets that
+identity:
 
 1. The realm gives the service a name and a secret: in auth-service,
    `AUTH_SERVICE_CLIENTS=quillpath:<secret>`; the same secret in the service.
@@ -258,18 +322,16 @@ a realm that signs with ES256** (`AUTH_SIGNING_KEY`): under the legacy shared
 secret any holder can write itself a token with any `sub`. mTLS between
 services (clave #163) will replace the token as the proof; the rule stays.
 
-**A person asks about themselves.** `GET /authz/role?user=` and `check` with
-`user_id` naming somebody else are for service tokens. From a person's token
-they answer `403`.
+### Roles are remembered for a few seconds
 
-**Roles are remembered for a few seconds.** `/authz/role` is asked on every
-request to every product service. The answer is kept in memory for
-`ORG_ROLE_CACHE_SECONDS` (default `10`, `0` off) and forgotten at once on any
-membership change made through the same instance. With several instances, a
-change made on one is seen by the others within that many seconds.
+The role behind every answer is kept in memory for `ORG_ROLE_CACHE_SECONDS`
+(default `10`, `0` off) and forgotten at once on any membership change made
+through the same instance. With several instances, a change made on one is seen
+by the others within that many seconds; a service's own `permissionReader` adds
+its `ttlSeconds` on top.
 
-Not built: an organization changing an app's rules for itself ("here, members
-may delete deals"). The rule set is per app, for every organization.
+Not built: an organization changing an app's rules for itself, and custom roles
+(clave #164). The rule set is per app, for every organization.
 
 ## Pages
 

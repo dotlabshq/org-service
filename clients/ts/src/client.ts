@@ -8,6 +8,11 @@ import type {
   RegisteredApp,
   AppPolicy,
   AppManifest,
+  ActionSpec,
+  Access,
+  Requires,
+  Credential,
+  PermissionSet,
   EffectiveRole,
   CheckResult,
 } from './types.js'
@@ -283,16 +288,37 @@ export class OrgClient {
   }
 
   /**
-   * Ask the PDP whether an app action is allowed at a scope. Deny-by-default:
+   * Ask the PDP whether one app action is allowed at a scope. Deny-by-default:
    * an action the app never declared is refused (`reason: 'no_policy'`).
-   * Naming another user (`userId`) needs a service token.
+   *
+   * From a person's token this is about that person. A service may name the
+   * person it is serving (`userId`) and say what they presented
+   * (`credential`), or ask about an organization's key
+   * (`credential: { kind: 'org_key', role }`); with neither it asks about
+   * itself. Prefer `permissions()` when a request checks more than one thing.
    */
-  async check(input: { app: string; action: string; scopeId: string; userId?: string }): Promise<CheckResult> {
+  async check(input: { app: string; action: string; scopeId: string; userId?: string; credential?: Credential }): Promise<CheckResult> {
     return this.api<CheckResult>('POST', '/authz/check', {
       app: input.app,
       action: input.action,
       scope_id: input.scopeId,
       ...(input.userId ? { user_id: input.userId } : {}),
+      ...(input.credential ? { credential: input.credential } : {}),
+    })
+  }
+
+  /**
+   * Everything a principal may do in an app at an organization, decided by
+   * org-service in one answer. Fetch it once per principal and organization,
+   * keep it briefly (`permissionReader`), and test it with `can()` from
+   * `@baseworks/core/permissions`. Who may ask about whom is as for `check`.
+   */
+  async permissions(input: { app: string; scopeId: string; userId?: string; credential?: Credential }): Promise<PermissionSet> {
+    return this.api<PermissionSet>('POST', '/authz/permissions', {
+      app: input.app,
+      scope_id: input.scopeId,
+      ...(input.userId ? { user_id: input.userId } : {}),
+      ...(input.credential ? { credential: input.credential } : {}),
     })
   }
 
@@ -319,6 +345,47 @@ export class OrgClient {
   async listAppPolicies(name: string): Promise<AppPolicy[]> {
     const { policies } = await this.api<{ policies: AppPolicy[] }>('GET', `/apps/${encodeURIComponent(name)}/policies`)
     return policies
+  }
+}
+
+/**
+ * Permission sets, remembered for a short while.
+ *
+ * A service asks org-service what a principal may do once, and answers every
+ * check in the next few seconds from memory. `key` says whose answer it is —
+ * the user (or key) id and the organization, and the kind of credential when a
+ * service handles more than one — so two people never share an entry.
+ *
+ * What this costs: a change in someone's role, or in the app's rules, is seen
+ * here at most `ttlSeconds` later (default 30). A failed fetch is never
+ * remembered and is never an empty set that looks like an answer: it throws,
+ * and the caller refuses the request.
+ *
+ *   const perms = permissionReader({ ttlSeconds: 30 })
+ *   const set = await perms.read(`${userId}:${orgId}`, () => org.permissions({ app: 'quillpath', scopeId: orgId }))
+ *   if (!can(set, 'deal.delete')) return c.json({ error: 'forbidden' }, 403)
+ */
+export function permissionReader(opts: { ttlSeconds?: number; maxEntries?: number; now?: () => number } = {}) {
+  const ttlMs = Math.max(0, opts.ttlSeconds ?? 30) * 1000
+  const max = opts.maxEntries ?? 10_000
+  const now = opts.now ?? Date.now
+  const entries = new Map<string, { set: PermissionSet; until: number }>()
+  return {
+    async read(key: string, load: () => Promise<PermissionSet>): Promise<PermissionSet> {
+      const hit = entries.get(key)
+      if (hit && hit.until > now()) return hit.set
+      const set = await load()
+      if (ttlMs > 0) {
+        if (entries.size >= max) entries.clear()
+        entries.set(key, { set, until: now() + ttlMs })
+      }
+      return set
+    },
+    /** Drop one principal's answer (after the app itself changed their role), or all of them. */
+    forget(key?: string): void {
+      if (key === undefined) entries.clear()
+      else entries.delete(key)
+    },
   }
 }
 

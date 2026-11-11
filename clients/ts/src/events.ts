@@ -120,10 +120,13 @@ export const InvitationEvents = defineAggregate('invitation', {
 
 // ── app registry + policy (the PDP) ───────────────────────────────────────────
 //
-// The PDP answers "may user U do action A at scope S?". Apps register a manifest
-// (action → minimum role) at boot; deny-by-default until a policy exists. Roles
-// resolve over org membership, inherited downward to every sub-scope (v1: no
-// per-sub-scope grants — those extend the membership model later if needed).
+// The PDP answers "may this principal do action A at scope S?". An app
+// registers a manifest at boot: every action it has, and what the action asks
+// for — a least role, whether it reads or writes, whether only a person (or
+// only a signed-in session) may do it, and which services may. Deny-by-default
+// until an action is declared. Roles resolve over org membership, inherited
+// downward to every sub-scope (v1: no per-sub-scope grants — those extend the
+// membership model later if needed).
 
 export const AppEvents = defineAggregate('app', {
   AppRegistered: z.object({
@@ -146,4 +149,20 @@ export const AppPolicyEvents = defineAggregate('app_policy', {
     minRole: Role,
     at: z.number().int(),
   }),
+  // An action as the app's manifest declares it (org-service 0.12). Replaces
+  // PolicySet for registration: it carries the whole of what the action asks
+  // for, and re-registering emits it again whenever the app changed its mind.
+  // Scalars only, because a projection column is one: `requires` is '' for
+  // "anyone", `services` is a comma-separated list of service identities.
+  PolicyDeclared: z.object({
+    app: z.string().min(1),
+    action: z.string().min(1),
+    minRole: Role,
+    access: z.enum(['read', 'write']),
+    requires: z.enum(['', 'person', 'session']),
+    services: z.string(),
+    at: z.number().int(),
+  }),
+  // The app no longer has this action: it left the manifest.
+  PolicyRemoved: z.object({ at: z.number().int() }),
 })

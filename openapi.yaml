@@ -18,11 +18,15 @@ info:
     They are documented here because services call them. `/healthz` is at the
     service root.
 
-    **The PDP.** An app registers its actions and the least role each asks for;
-    `/authz/check` decides, deny-by-default: an action no app declared is
-    refused with `reason: no_policy`. A person may ask only about themselves:
-    naming another user in `/authz/role` or `/authz/check` needs a service
-    token.
+    **The PDP.** An app registers its actions and what each asks for: a least
+    role, `access` (`read` or `write`), `requires` (`person` or `session`) and
+    the `services` that may do it as themselves. Registration makes the record
+    equal to the manifest. `/authz/permissions` answers every action a
+    principal may do in an app at an organization; `/authz/check` decides one,
+    deny-by-default: an action no app declared is refused with
+    `reason: no_policy`. A person may ask only about themselves; a service may
+    name the person it serves and describe the credential they presented, or
+    ask about an organization's key, or about itself.
 
     **Field names are `snake_case`** (ADR-043), request and response alike, and
     identical to the underlying row names — so a field added to a projection
